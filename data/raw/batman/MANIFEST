@@ -1,0 +1,13 @@
+# BATMAN-TCM 2.0 dump
+source_base: http://batman2.cloudna.cn/downloadApiFile/data/browser
+download_date: 2026-06-25
+files:
+  - name: herb_browse.txt
+    sha256: 7d3992de5b953be9c2f2265f6698566d0883815b9b2c9b0d0cdac38469949f07
+    bytes: 18160550
+  - name: known_browse_by_ingredients.txt.gz
+    sha256: 8b615e243a7d7708b959cc8c6e119f905983130b061f4e16d305d20dee99ebe3
+    bytes: 88231
+  - name: predicted_browse_by_ingredients.txt.gz
+    sha256: 61d7215af9b74929b2d9ea8cc0562316ebddb7573bac77367986df903bc5f075
+    bytes: 5610906

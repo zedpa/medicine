@@ -1,0 +1,8 @@
+rdkit
+pandas
+openpyxl
+requests
+pyyaml
+streamlit
+anthropic
+openai

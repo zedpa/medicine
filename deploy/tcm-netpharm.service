@@ -1,0 +1,19 @@
+[Unit]
+Description=TCM Network Pharmacology Web (Streamlit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 改成实际部署用户和路径
+User=ubuntu
+WorkingDirectory=/opt/tcm-netpharm
+EnvironmentFile=/opt/tcm-netpharm/.env
+ExecStart=/opt/tcm-netpharm/.venv/bin/streamlit run web/app.py \
+  --server.address 0.0.0.0 --server.port ${PORT} \
+  --server.headless true --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

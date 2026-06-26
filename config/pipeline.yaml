@@ -1,0 +1,44 @@
+# 中药网络药理学管道 · 口径集中声明（唯一可调来源）
+# 任何阈值/物种/去重规则的改动都只能在这里改，并记入 CHANGELOG。
+
+species:
+  name: "Homo sapiens"
+  taxon_id: 9606
+
+# ADME 筛选（经典 TCMSP 口径）。
+#   mode: auto        -> 若 data/raw/tcmsp/ 下存在 OB/DL 表则用之；否则退化为 rdkit 代理指标
+#         tcmsp       -> 强制使用 data/raw/tcmsp/ 静态表（缺失则报错）
+#         tcmsp_live  -> 实时抓取 TCMSP 该药材 OB/DL（模拟人工浏览，仅查询药材，按 InChIKey 连接；
+#                        未命中则回退 rdkit 代理）。无需本地表，但依赖 tcmsp-e.com 可达
+#         proxy       -> 强制使用 rdkit 代理指标（QED / Lipinski），不冒充 TCMSP 值
+#         off         -> 不做筛选，保留全部成分
+adme:
+  mode: tcmsp_live  # 实时抓 TCMSP OB/DL，按 InChIKey 与 BATMAN 连接
+  ob_min: 30.0      # 口服生物利用度下限（%），TCMSP 经典 ≥30
+  dl_min: 0.1       # 成药性下限；2026-06-25 由 0.18 放宽至 0.1（肉桂等小分子药材）
+  # proxy 模式使用的代理规则（明确标注，不等同于 TCMSP OB/DL）
+  proxy:
+    qed_min: 0.30          # rdkit QED 作为成药性代理
+    lipinski_max_violations: 1
+
+# 靶点来源
+targets:
+  use_known: true          # BATMAN 已知 TTI（gene symbol）
+  use_predicted: true      # BATMAN 预测 TTI（Entrez ID + score）
+  predicted_score_min: 0.4 # 预测靶点分数下限（FR-4.3）；2026-06-25 由 0.5 下调至 0.4
+
+# 外部服务
+services:
+  pubchem_base: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+  uniprot_base: "https://rest.uniprot.org/uniprotkb"
+  mygene_base: "https://mygene.info/v3"
+  request_timeout: 30
+  retries: 3
+  uniprot_reviewed_only: true   # 优先 Swiss-Prot 审阅条目
+
+paths:
+  batman_dir: "data/raw/batman"
+  tcmsp_dir: "data/raw/tcmsp"
+  cache_db: "data/cache/cache.sqlite"
+  outputs_dir: "outputs"
+  reports_dir: "reports"
