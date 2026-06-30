@@ -48,11 +48,12 @@ def test_snapshot_roundtrip_equal():  # AC-13
 def test_history_carries_results(tmp_path):  # AC-14
     store = HistoryStore(str(tmp_path / "h.sqlite"))
     snap = result_to_snapshot(_sample_result(), excel_path="p.xlsx")
-    store.save({"id": "c1", "title": "肉桂", "created_at": "2026-06-30T10:00:00",
+    store.save({"id": "c1", "owner": "u1", "title": "肉桂",
+                "created_at": "2026-06-30T10:00:00",
                 "updated_at": "2026-06-30T10:00:00",
                 "messages": [{"role": "user", "content": "肉桂"}],
                 "results": [snap]})
-    got = store.get("c1")
+    got = store.get("c1", owner="u1")
     assert got["results"] == [snap]                 # 经 sqlite 往返等价
     rebuilt, path = snapshot_to_result(got["results"][0])
     assert rebuilt.query == "肉桂" and path == "p.xlsx"
@@ -60,7 +61,8 @@ def test_history_carries_results(tmp_path):  # AC-14
 
 def test_history_without_results_backward_compatible(tmp_path):  # AC-14 向后兼容
     store = HistoryStore(str(tmp_path / "h.sqlite"))
-    store.save({"id": "c2", "title": "黄芪", "created_at": "2026-06-30T10:00:00",
+    store.save({"id": "c2", "owner": "u1", "title": "黄芪",
+                "created_at": "2026-06-30T10:00:00",
                 "updated_at": "2026-06-30T10:00:00",
                 "messages": [{"role": "user", "content": "黄芪"}]})   # 不带 results
-    assert store.get("c2")["results"] == []
+    assert store.get("c2", owner="u1")["results"] == []

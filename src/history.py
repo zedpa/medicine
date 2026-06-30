@@ -34,24 +34,34 @@ class HistoryStore:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS conversations ("
-            "id TEXT PRIMARY KEY, title TEXT, created_at TEXT, "
+            "id TEXT PRIMARY KEY, owner TEXT, title TEXT, created_at TEXT, "
             "updated_at TEXT, messages_json TEXT, results_json TEXT)"
         )
-        # 迁移: 旧库可能缺 results_json 列(spec-003 T3 新增) -> 补列, 旧会话 get 时 results=[]
+        # 迁移: 旧库可能缺 results_json(spec-003 T3) / owner(spec-004 T2) 列 -> 补列。
+        #   旧行 owner=NULL -> 对任何登录用户不可见(不丢数据), 可经 HISTORY_LEGACY_OWNER 一次性认领。
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(conversations)")}
         if "results_json" not in cols:
             self._conn.execute("ALTER TABLE conversations ADD COLUMN results_json TEXT")
+        if "owner" not in cols:
+            self._conn.execute("ALTER TABLE conversations ADD COLUMN owner TEXT")
         self._conn.commit()
+        legacy = os.environ.get("HISTORY_LEGACY_OWNER")
+        if legacy:
+            with _LOCK:
+                self._conn.execute(
+                    "UPDATE conversations SET owner=? WHERE owner IS NULL", (legacy,))
+                self._conn.commit()
 
     def save(self, conv: dict) -> None:
-        """按 id upsert。messages 序列化为 messages_json(ensure_ascii=False 保中文)。"""
+        """按 id upsert。conv 须含 owner(=username); messages 序列化为 messages_json。"""
         with _LOCK:
             self._conn.execute(
                 "INSERT OR REPLACE INTO conversations "
-                "(id, title, created_at, updated_at, messages_json, results_json) "
-                "VALUES (?,?,?,?,?,?)",
+                "(id, owner, title, created_at, updated_at, messages_json, results_json) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (
                     conv["id"],
+                    conv.get("owner", ""),
                     conv.get("title", ""),
                     conv.get("created_at", ""),
                     conv.get("updated_at", ""),
@@ -61,10 +71,11 @@ class HistoryStore:
             )
             self._conn.commit()
 
-    def get(self, conv_id: str) -> Optional[dict]:
+    def get(self, conv_id: str, owner: str) -> Optional[dict]:
+        """取单条; owner 不匹配视同不存在(返回 None)-> 跨用户隔离在查询层强制。"""
         cur = self._conn.execute(
             "SELECT id, title, created_at, updated_at, messages_json, results_json "
-            "FROM conversations WHERE id=?", (conv_id,)
+            "FROM conversations WHERE id=? AND owner=?", (conv_id, owner)
         )
         row = cur.fetchone()
         if not row:
@@ -75,14 +86,14 @@ class HistoryStore:
             "results": json.loads(row[5] or "[]"),   # 旧库 NULL -> [](向后兼容)
         }
 
-    def list(self, limit: Optional[int] = None) -> list:
-        """按 updated_at 降序返回元信息(含 n_messages, 不含 messages 正文)。"""
+    def list(self, owner: str, limit: Optional[int] = None) -> list:
+        """按 updated_at 降序返回该 owner 的会话元信息(含 n_messages, 不含正文)。"""
         sql = ("SELECT id, title, created_at, updated_at, messages_json "
-               "FROM conversations ORDER BY updated_at DESC")
+               "FROM conversations WHERE owner=? ORDER BY updated_at DESC")
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
         out = []
-        for r in self._conn.execute(sql).fetchall():
+        for r in self._conn.execute(sql, (owner,)).fetchall():
             try:
                 n = len(json.loads(r[4] or "[]"))
             except (ValueError, TypeError):
@@ -91,25 +102,28 @@ class HistoryStore:
                         "updated_at": r[3], "n_messages": n})
         return out
 
-    def set_title(self, conv_id: str, title: str) -> None:
-        """仅更新标题(重命名)。不存在的 id 静默忽略(幂等)。"""
-        with _LOCK:
-            self._conn.execute("UPDATE conversations SET title=? WHERE id=?",
-                               (title, conv_id))
-            self._conn.commit()
-
-    def delete(self, conv_id: str) -> None:
-        """删单条; 删不存在的 id 不报错(幂等)。"""
-        with _LOCK:
-            self._conn.execute("DELETE FROM conversations WHERE id=?", (conv_id,))
-            self._conn.commit()
-
-    def prune(self, keep: int) -> None:
-        """只保留 updated_at 最新的 keep 条, 删除其余(最旧的超额会话)。"""
+    def set_title(self, conv_id: str, owner: str, title: str) -> None:
+        """仅更新标题(重命名)。跨 owner 或不存在的 id 静默忽略(幂等)。"""
         with _LOCK:
             self._conn.execute(
-                "DELETE FROM conversations WHERE id NOT IN ("
-                "SELECT id FROM conversations ORDER BY updated_at DESC LIMIT ?)",
-                (int(keep),),
+                "UPDATE conversations SET title=? WHERE id=? AND owner=?",
+                (title, conv_id, owner))
+            self._conn.commit()
+
+    def delete(self, conv_id: str, owner: str) -> None:
+        """删单条; 跨 owner 或删不存在的 id 不报错(幂等)。"""
+        with _LOCK:
+            self._conn.execute(
+                "DELETE FROM conversations WHERE id=? AND owner=?", (conv_id, owner))
+            self._conn.commit()
+
+    def prune(self, owner: str, keep: int) -> None:
+        """按 owner 各自只保留 updated_at 最新的 keep 条(A 的历史不挤掉 B 的)。"""
+        with _LOCK:
+            self._conn.execute(
+                "DELETE FROM conversations WHERE owner=? AND id NOT IN ("
+                "SELECT id FROM conversations WHERE owner=? "
+                "ORDER BY updated_at DESC LIMIT ?)",
+                (owner, owner, int(keep)),
             )
             self._conn.commit()

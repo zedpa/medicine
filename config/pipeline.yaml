@@ -61,6 +61,16 @@ history:
   max_conversations: 50             # 侧边栏列出 / 保留上限（prune）
   title_max_len: 24                 # 会话标题截断长度
 
+# 账号授权与多租户（spec-004，streamlit-authenticator）。历史按登录用户 owner 隔离。
+# 密钥不入库：Cookie 加密 key=env AUTH_COOKIE_KEY；首启种子 admin=env ADMIN_USER/ADMIN_PASSWORD。
+auth:
+  enabled: true
+  db_path: "data/auth.sqlite"       # 独立账号库（bcrypt 哈希，绝不存明文）
+  cookie_name: "tcm_auth"
+  cookie_expiry_days: 7             # 免登天数
+  allow_self_register: true         # 是否开放自助注册
+  default_role: "user"              # 自助注册默认角色（admin/user）
+
 # 外部服务
 services:
   pubchem_base: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"

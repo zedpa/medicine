@@ -14,8 +14,24 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PORT = 8599
 BASE_URL = f"http://127.0.0.1:{PORT}"
-# E2E 历史库隔离: 不污染真实 data/history.sqlite
+# E2E 库隔离: 不污染真实 data/*.sqlite
 HISTORY_DB = os.path.join(tempfile.gettempdir(), "tcm_e2e_history.sqlite")
+AUTH_DB = os.path.join(tempfile.gettempdir(), "tcm_e2e_auth.sqlite")
+# 种子 admin(spec-004): 供已登录类用例; 固定 Cookie key 保证刷新后免登
+ADMIN_USER, ADMIN_PASSWORD = "admin", "admin123"
+
+
+def login(page, username=ADMIN_USER, password=ADMIN_PASSWORD):
+    """填登录表单并提交; 等待主应用(聊天输入框)出现。
+
+    登录/注册两表单都含「用户名/密码」标签 -> 用所在 stForm 作用域消歧。
+    """
+    form = page.locator('[data-testid="stForm"]').filter(
+        has=page.get_by_role("button", name="登录"))
+    form.get_by_label("用户名", exact=True).fill(username)
+    form.get_by_label("密码", exact=True).fill(password)
+    form.get_by_role("button", name="登录").click()
+    page.locator('[data-testid="stChatInput"]').wait_for(timeout=30_000)
 
 
 def _free(port):
@@ -44,10 +60,15 @@ def streamlit_server():
     # 清除 LLM 密钥 -> 直接模式(确定性, 不触 LLM/不计费)
     env = {k: v for k, v in os.environ.items()
            if k not in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")}
-    # 历史库指向临时文件并清空, 保证本轮 E2E 干净起步
-    if os.path.exists(HISTORY_DB):
-        os.remove(HISTORY_DB)
+    # 历史库 + 账号库指向临时文件并清空, 保证本轮 E2E 干净起步
+    for f in (HISTORY_DB, AUTH_DB):
+        if os.path.exists(f):
+            os.remove(f)
     env["HISTORY_DB_PATH"] = HISTORY_DB
+    env["AUTH_DB_PATH"] = AUTH_DB
+    env["AUTH_COOKIE_KEY"] = "e2e-fixed-cookie-key-0123456789"   # 固定 -> 刷新免登
+    env["ADMIN_USER"] = ADMIN_USER                               # 种子 admin
+    env["ADMIN_PASSWORD"] = ADMIN_PASSWORD
     venv_py = os.path.join(ROOT, ".venv", "bin", "streamlit")
     proc = subprocess.Popen(
         [venv_py, "run", "web/app.py",
@@ -73,7 +94,15 @@ def browser_type_launch_args(browser_type_launch_args):
 
 
 @pytest.fixture
-def page_to_app(streamlit_server, page):
-    page.set_default_timeout(180_000)   # 管道含遍历 267 成分, 给足时间
+def page_raw(streamlit_server, page):
+    """到达应用但**不登录**(供认证门用例)。每个 page 是全新 context, 无 cookie。"""
+    page.set_default_timeout(180_000)
     page.goto(streamlit_server, wait_until="domcontentloaded")
     return page
+
+
+@pytest.fixture
+def page_to_app(page_raw):
+    """到达应用并以种子 admin 登录(供已登录类用例)。"""
+    login(page_raw)
+    return page_raw

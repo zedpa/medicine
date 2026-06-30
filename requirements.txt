@@ -4,6 +4,7 @@ openpyxl
 requests
 pyyaml
 streamlit
+streamlit-authenticator>=0.4.2
 anthropic
 openai
 matplotlib

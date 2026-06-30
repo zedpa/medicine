@@ -2,6 +2,22 @@
 
 记录所有归一化口径、阈值、物种、去重规则的变更（见 `config/pipeline.yaml`）。
 
+## 2026-06-30 · 账号授权与多租户（spec-004）
+- 引入 `streamlit-authenticator`（v0.4.2，bcrypt + Cookie/JWT 会话）做登录/注册/登出，
+  调研后取自包含方案而非外部 OIDC/IdP（自托管、无企业 IdP，最契合）。
+- 新增 `config/pipeline.yaml › auth`：`enabled / db_path / cookie_name /
+  cookie_expiry_days / allow_self_register / default_role`。
+- 新增账号存储层 `src/auth.py`（`UserStore`，sqlite，密码**只存 bcrypt 哈希**，
+  哈希与时间由调用方注入 → 纯净可单测）；账号库 `data/auth.sqlite`，独立于历史/缓存库。
+- 多租户：`conversations` 表加 `owner` 列，`HistoryStore` 全部读写按 `owner` scope
+  （`get/list/set_title/delete/prune` 均带 owner），跨用户不可见/不可改/不可删。
+  旧库 `ALTER TABLE ADD COLUMN owner`；旧行 owner=NULL 默认不归属，
+  可经 env `HISTORY_LEGACY_OWNER` 一次性认领。
+- 密钥口径：`AUTH_COOKIE_KEY` / `ADMIN_USER` / `ADMIN_PASSWORD` 仅来自环境变量，
+  绝不入库；首启账号库为空且配了 admin 凭据则种入一个 admin（role=admin）。
+- 测试：T1 账号层 8 单测、T2 历史隔离 5 新增单测（history 共 17）、T3 E2E
+  登录门 + 跨用户隔离 + 重登归属 2 用例。口径变更仅在 config，记此。
+
 ## 2026-06-25 · 初始口径冻结
 - 物种：Homo sapiens / 9606
 - ADME：OB ≥ 30%，DL ≥ 0.18；无 TCMSP 时用 RDKit 代理（QED ≥ 0.30，Lipinski 违反 ≤ 1），
