@@ -1,5 +1,11 @@
 # 前端主题 token（spec-006 UI 重设计；本草典籍 × 分子网络）
 # 配色规避三种 AI 默认观感：暖奶油+衬线+陶土 / 暗底+荧光绿 / broadsheet 细线。
+
+# 自托管字体（spec-007）：开启静态服务，static/ 下文件经 app/static/ 提供。
+# 字体 woff2 在 static/fonts/（bash scripts/fetch_fonts.sh 获取），内网/离线免依赖 Google Fonts。
+[server]
+enableStaticServing = true
+
 [theme]
 primaryColor = "#1f6b4f"            # 松绿（植物学主色，按钮/选项卡/控件强调）
 backgroundColor = "#FAFBF8"         # 矿物冷白（非暖奶油 #F4F1EA）

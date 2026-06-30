@@ -89,7 +89,16 @@ def _save_current():
 # ---- 前端设计 (UI 重设计): 本草典籍 × 分子网络。token 见 .streamlit/config.toml ----
 _THEME_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+/* 自托管字体(spec-007): woff2 经 Streamlit 静态服务(/static/fonts/), 内网/离线免依赖 Google Fonts。
+   相对路径 static/... 兼容 baseUrlPath 子路径部署。缺文件时回落系统字体(优雅降级)。 */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('static/fonts/inter-400.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('static/fonts/inter-500.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('static/fonts/inter-600.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('static/fonts/inter-700.woff2') format('woff2');}
+@font-face{font-family:'Space Mono';font-style:normal;font-weight:400;font-display:swap;src:url('static/fonts/spacemono-400.woff2') format('woff2');}
+@font-face{font-family:'Space Mono';font-style:normal;font-weight:700;font-display:swap;src:url('static/fonts/spacemono-700.woff2') format('woff2');}
+/* 思源宋体: 简体中文子集单字重, 覆盖 400~700 全部标题字重 */
+@font-face{font-family:'Noto Serif SC';font-style:normal;font-weight:400 700;font-display:swap;src:url('static/fonts/notoserifsc-600.woff2') format('woff2');}
 :root{
   --ink:#1b2a23; --paper:#FAFBF8; --sage:#EBF0EA; --line:#D9E2D6;
   --pine:#1f6b4f; --pine-soft:#2d8a66; --cinnabar:#B23A2E; --muted:#5d6b62;

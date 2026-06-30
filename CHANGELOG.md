@@ -2,6 +2,17 @@
 
 记录所有归一化口径、阈值、物种、去重规则的变更（见 `config/pipeline.yaml`）。
 
+## 2026-06-30 · 自托管字体（spec-007）
+- 移除对 Google Fonts 的运行时依赖（内网/离线可跑）：字体 woff2 自托管于
+  `static/fonts/`，经 Streamlit 静态服务（`[server] enableStaticServing = true`，
+  路径 `/static/fonts/`）提供。
+- 字体（来源 Fontsource，已子集 woff2）：Inter 400/500/600/700、Space Mono 400/700、
+  Noto Serif SC 600（简体中文子集，~1.5MB；单字重覆盖全部标题字重）；合计 ~1.6MB 入库。
+- `web/app.py` 的 `@import(google)` 改为 `@font-face`（相对路径 `static/fonts/`，
+  兼容 baseUrlPath；缺文件回落系统字体优雅降级）。新增 `scripts/fetch_fonts.sh` 幂等重拉。
+- 实景核验：页面无 googleapis/gstatic 请求，字体全来自本机；视觉与 spec-006 一致；
+  66 单测 + 13 E2E 全绿。
+
 ## 2026-06-30 · 前端 UI 重设计（spec-006）
 - 依据 Anthropic frontend-design skill 两遍式设计法，让主题（中药 × 网络药理学）
   驱动美学：「本草典籍 × 分子网络」。
