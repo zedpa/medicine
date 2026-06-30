@@ -85,9 +85,99 @@ def _save_current():
     })
     store.prune(owner, int(hcfg.get("max_conversations", 50)))
 
+
+# ---- 前端设计 (UI 重设计): 本草典籍 × 分子网络。token 见 .streamlit/config.toml ----
+_THEME_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+:root{
+  --ink:#1b2a23; --paper:#FAFBF8; --sage:#EBF0EA; --line:#D9E2D6;
+  --pine:#1f6b4f; --pine-soft:#2d8a66; --cinnabar:#B23A2E; --muted:#5d6b62;
+}
+/* 基础字族: UI 无衬线(中文回落苹方/雅黑), 标题用思源宋体(本草典籍感) */
+html, body, .stApp, [data-testid="stAppViewContainer"]{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  color:var(--ink);
+}
+h1,h2,h3,h4,[data-testid="stHeading"]{
+  font-family:'Noto Serif SC',Georgia,'Songti SC',serif !important; letter-spacing:.01em;
+}
+/* 数字/计量用等宽, 强调数据感 */
+[data-testid="stMetricValue"],.mono{ font-family:'Space Mono',ui-monospace,monospace; }
+
+/* 招牌: 朱砂印章 + 宋体题名 + 管线节点母题(成分→靶点→蛋白→网络) */
+.hero{ display:flex; align-items:center; gap:18px; padding:6px 0 2px; }
+.seal{ flex:0 0 auto; width:60px; height:60px; border-radius:14px; color:#FBEFE9;
+  background:linear-gradient(145deg,#B23A2E,#922b22); display:flex; align-items:center;
+  justify-content:center; font-family:'Noto Serif SC',serif; font-weight:700; font-size:33px;
+  box-shadow:0 6px 18px rgba(178,58,46,.26); border:1px solid rgba(0,0,0,.06); }
+.hero-title{ font-family:'Noto Serif SC',serif; font-weight:700; font-size:29px; line-height:1.12;
+  margin:0; color:var(--ink); }
+.pipe{ display:flex; align-items:center; gap:7px; margin-top:8px; font-family:'Space Mono',monospace;
+  font-size:11.5px; letter-spacing:.03em; color:var(--pine); flex-wrap:wrap; }
+.pipe .dot{ width:7px; height:7px; border-radius:50%; background:var(--pine); }
+.pipe .dot.c{ background:var(--cinnabar); }
+.pipe .ln{ width:16px; height:1px; background:var(--line); }
+.hero-sub{ font-size:12.5px; color:var(--muted); margin-top:7px; }
+.hero-rule{ height:2px; margin:13px 0 4px; border-radius:2px;
+  background:linear-gradient(90deg,var(--pine),rgba(31,107,79,0) 62%); }
+
+/* 按钮: 圆角 + 主色松绿(招牌之外保持克制) */
+.stButton>button,.stFormSubmitButton>button{ border-radius:9px; font-weight:600; }
+button[kind="primary"],[data-testid="stBaseButton-primary"]{ background:var(--pine); border-color:var(--pine); }
+button[kind="primary"]:hover{ background:var(--pine-soft); border-color:var(--pine-soft); }
+
+/* 指标卡片化 */
+[data-testid="stMetric"]{ background:#fff; border:1px solid var(--line); border-radius:14px;
+  padding:13px 16px; box-shadow:0 1px 2px rgba(20,40,30,.04); }
+[data-testid="stMetricValue"]{ color:var(--pine); }
+[data-testid="stMetricLabel"]{ color:var(--muted); }
+
+/* 侧栏 */
+[data-testid="stSidebar"]{ border-right:1px solid var(--line); }
+[data-testid="stSidebar"] h3{ font-size:16px; }
+
+/* 选项卡选中色 / 表单卡 / 数据表圆角 */
+[data-testid="stTabs"] button[aria-selected="true"]{ color:var(--pine)!important; }
+[data-testid="stForm"]{ background:#fff; border:1px solid var(--line); border-radius:16px; }
+[data-testid="stDataFrame"]{ border-radius:12px; overflow:hidden; }
+[data-testid="stChatInput"]{ border-radius:14px; }
+
+/* 质量底线: 键盘焦点可见 + 尊重减少动效 */
+:focus-visible{ outline:2px solid var(--cinnabar); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce){ *{ animation:none!important; transition:none!important; } }
+</style>
+"""
+
+_HERO_HTML = """
+<div class="hero">
+  <div class="seal">本</div>
+  <div>
+    <div class="hero-title">中药网络药理学一站式助手</div>
+    <div class="pipe">
+      <span class="dot"></span>成分<span class="ln"></span>
+      <span class="dot"></span>靶点<span class="ln"></span>
+      <span class="dot"></span>蛋白<span class="ln"></span>
+      <span class="dot c"></span>网络
+    </div>
+    <div class="hero-sub">数据来源 · BATMAN-TCM 2.0 · PubChem · UniProt · STRING · Enrichr</div>
+  </div>
+</div>
+<div class="hero-rule"></div>
+"""
+
+
+def _inject_theme():
+    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+
+def _render_hero():
+    st.markdown(_HERO_HTML, unsafe_allow_html=True)
+
+
 st.set_page_config(page_title="中药网络药理学助手", page_icon="🌿", layout="wide")
-st.title("🌿 中药网络药理学一站式助手")
-st.caption("数据来源: BATMAN-TCM 2.0 + PubChem + UniProt · 输入任意药材名(支持批量), 自动产出成分→靶点→蛋白 + Excel")
+_inject_theme()
+_render_hero()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []

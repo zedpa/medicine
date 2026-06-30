@@ -2,6 +2,17 @@
 
 记录所有归一化口径、阈值、物种、去重规则的变更（见 `config/pipeline.yaml`）。
 
+## 2026-06-30 · 前端 UI 重设计（spec-006）
+- 依据 Anthropic frontend-design skill 两遍式设计法，让主题（中药 × 网络药理学）
+  驱动美学：「本草典籍 × 分子网络」。
+- 设计 token（`.streamlit/config.toml` + `web/app.py` 注入 CSS）：松绿 `#1f6b4f`(主色)、
+  矿物冷白 `#FAFBF8`(背景)、苔绿 `#EBF0EA`(卡片/侧栏)、松墨 `#1b2a23`(正文)、
+  朱砂 `#B23A2E`(招牌色)；字族 思源宋体(标题)+Inter(正文)+Space Mono(计量)。
+- 招牌：朱砂印章「本」+ 宋体题名 + 节点母题(成分→靶点→蛋白→网络, 末节点朱砂)；
+  指标卡片化、按钮/表单/数据表圆角、选项卡选中转松绿。
+- 质量底线：键盘焦点可见、`prefers-reduced-motion` 关动效。
+- 纯视觉改动：保留全部 E2E 依赖的文案/控件名；66 单测 + 13 E2E 重设计后仍全绿。
+
 ## 2026-06-30 · 账号管理后台 + 统计看板（spec-005）
 - 新增 `config/pipeline.yaml › admin`：`herb_top_n`(看板热门药材 Top N)、
   `activity_days`(活跃趋势回看天数)。
