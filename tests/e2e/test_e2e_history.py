@@ -37,7 +37,7 @@ def test_new_conversation_keeps_history(page_to_app):  # AC-10
     _ask(page, q)
     page.locator(SIDEBAR).get_by_text(q, exact=False).first.wait_for(timeout=30_000)
     # 新建对话: 主区清空, 但侧边栏历史保留上一会话
-    page.get_by_role("button", name="➕ 新建对话").click()
+    page.get_by_role("button", name="新建对话").click()
     page.wait_for_timeout(1500)
     assert page.locator('[data-testid="stChatMessage"]').count() == 0   # 主区已清空
     assert page.locator(SIDEBAR).get_by_text(q, exact=False).first.is_visible()  # 历史仍在
@@ -58,7 +58,7 @@ def test_snapshot_restores_result_panel(page_to_app):  # AC-15
     assert page.locator('[data-testid="stImage"] img').count() >= 1
 
     # 新建对话: 结果面板消失
-    page.get_by_role("button", name="➕ 新建对话").click()
+    page.get_by_role("button", name="新建对话").click()
     page.wait_for_timeout(1500)
     assert page.get_by_text("分析结果").count() == 0
 
@@ -77,9 +77,13 @@ def test_delete_removes_conversation(page_to_app):  # AC-11
     _ask(page, q)
     sidebar = page.locator(SIDEBAR)
     sidebar.get_by_text(q, exact=False).first.wait_for(timeout=30_000)
-    # 找到该会话所在行的 🗑 删除
+    # 管理操作在「⋯」三点菜单内: 先打开该会话行的菜单, 再点删除
     row = sidebar.locator('[data-testid="stHorizontalBlock"]').filter(has_text=q)
-    row.get_by_role("button", name="🗑").first.click()
+    row.get_by_role("button", name="⋯").first.click()
+    page.wait_for_timeout(500)
+    # 打开的 popover 内容点删除(只渲染当前打开的 popover body)
+    page.locator('[data-testid="stPopoverBody"]').get_by_role(
+        "button", name="🗑 删除对话").first.click()
     page.wait_for_timeout(1500)
     assert sidebar.get_by_text(q, exact=False).count() == 0      # 从侧边栏消失
     # 刷新后不复现(确认落库删除)

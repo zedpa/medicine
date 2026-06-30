@@ -68,8 +68,63 @@ if "results" not in st.session_state:
 if "conv_id" not in st.session_state:
     st.session_state.conv_id = uuid.uuid4().hex
 
+def _new_conversation():
+    _save_current()                       # 先把当前会话落库
+    st.session_state.messages = []
+    st.session_state.results = []
+    st.session_state.conv_id = uuid.uuid4().hex
+
+
+def _open_conversation(store, conv_id):
+    loaded = store.get(conv_id) or {}
+    st.session_state.messages = loaded.get("messages", [])
+    # T3: 从快照重建结果, 切回会话即重显表/图/下载面板
+    st.session_state.results = [snapshot_to_result(s) for s in loaded.get("results", [])]
+    st.session_state.conv_id = conv_id
+
+
 with st.sidebar:
-    st.subheader("状态")
+    st.markdown("### 🌿 中药网络药理学")
+    _store, _hcfg = _history()
+
+    # 顶部: 新建对话(Claude 风格, 醒目)
+    if st.button("✚　新建对话", use_container_width=True, type="primary"):
+        _new_conversation()
+        st.rerun()
+
+    st.caption("最近对话")
+    _convs = _store.list(limit=int(_hcfg.get("max_conversations", 50)))
+    if not _convs:
+        st.caption("暂无历史，开始第一轮提问吧")
+
+    for _c in _convs:
+        _cur = _c["id"] == st.session_state.conv_id
+        _title = _c["title"] or "新对话"
+        _row, _menu = st.columns([6, 1], vertical_alignment="center")
+        # 选中态用 primary 高亮(替代 🟢 emoji), 更接近 Claude 的当前会话样式
+        if _row.button(_title, key=f"open_{_c['id']}", use_container_width=True,
+                       type="primary" if _cur else "secondary"):
+            _open_conversation(_store, _c["id"])
+            st.rerun()
+        # 管理操作收进「⋯」三点菜单(重命名 / 删除)
+        with _menu.popover("⋯", use_container_width=True):
+            st.caption(_title)
+            _new_name = st.text_input("重命名", value=_title, key=f"rn_{_c['id']}",
+                                      label_visibility="collapsed")
+            if st.button("✏️ 重命名", key=f"rnbtn_{_c['id']}", use_container_width=True):
+                if _new_name.strip():
+                    _store.set_title(_c["id"], _new_name.strip())
+                    st.rerun()
+            if st.button("🗑 删除对话", key=f"del_{_c['id']}", use_container_width=True):
+                _store.delete(_c["id"])
+                if _c["id"] == st.session_state.conv_id:
+                    st.session_state.messages = []
+                    st.session_state.results = []
+                    st.session_state.conv_id = uuid.uuid4().hex
+                st.rerun()
+
+    # 底部: 设置/状态收进 expander, 列表更聚焦(Claude 把账户信息放底部)
+    st.divider()
     if os.environ.get("DEEPSEEK_API_KEY"):
         _backend = "DeepSeek (deepseek-chat)"
     elif os.environ.get("OPENAI_API_KEY"):
@@ -78,45 +133,13 @@ with st.sidebar:
         _backend = "Claude (claude-opus-4-8)"
     else:
         _backend = "直接模式(无 LLM, 输入即药材名)"
-    st.write("LLM 后端:", _backend)
-    st.markdown("**示例**: `肉桂` / `黄芪, 当归` / `Cinnamomum cassia`")
-    if st.button("清空当前对话内容"):
-        # 仅清屏(不删历史库): 历史会话仍保留在侧边栏
-        st.session_state.messages = []
-        st.session_state.results = []
-        st.rerun()
-
-    st.divider()
-    st.subheader("💬 对话历史")
-    _store, _hcfg = _history()
-    if st.button("➕ 新建对话", use_container_width=True):
-        _save_current()                       # 先把当前会话落库
-        st.session_state.messages = []
-        st.session_state.results = []
-        st.session_state.conv_id = uuid.uuid4().hex
-        st.rerun()
-
-    _convs = _store.list(limit=int(_hcfg.get("max_conversations", 50)))
-    if not _convs:
-        st.caption("暂无历史，开始第一轮提问吧")
-    for _c in _convs:
-        _open, _del = st.columns([5, 1])
-        _cur = _c["id"] == st.session_state.conv_id
-        _label = ("🟢 " if _cur else "") + (_c["title"] or "新对话")
-        if _open.button(_label, key=f"open_{_c['id']}", use_container_width=True):
-            _loaded = _store.get(_c["id"]) or {}
-            st.session_state.messages = _loaded.get("messages", [])
-            # T3: 从快照重建结果, 切回会话即重显表/图/下载面板
-            st.session_state.results = [snapshot_to_result(s)
-                                        for s in _loaded.get("results", [])]
-            st.session_state.conv_id = _c["id"]
-            st.rerun()
-        if _del.button("🗑", key=f"del_{_c['id']}"):
-            _store.delete(_c["id"])
-            if _c["id"] == st.session_state.conv_id:
-                st.session_state.messages = []
-                st.session_state.results = []
-                st.session_state.conv_id = uuid.uuid4().hex
+    with st.expander(f"ℹ️ {_backend}", expanded=False):
+        st.markdown("**示例**: `肉桂` / `黄芪, 当归` / `Cinnamomum cassia`")
+        st.caption("数据来源: BATMAN-TCM 2.0 + PubChem + UniProt + STRING + Enrichr")
+        if st.button("🧹 清空当前对话内容", use_container_width=True):
+            # 仅清屏(不删历史库): 历史会话仍保留在侧边栏
+            st.session_state.messages = []
+            st.session_state.results = []
             st.rerun()
 
 

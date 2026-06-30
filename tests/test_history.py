@@ -80,6 +80,18 @@ def test_delete_idempotent(tmp_path):  # AC-6
     store.delete("never")
 
 
+def test_set_title_rename(tmp_path):  # 重命名(三点菜单)
+    store = HistoryStore(str(tmp_path / "h.sqlite"))
+    store.save(_conv("c1", "2026-06-30T10:00:00", [{"role": "user", "content": "肉桂"}]))
+    store.set_title("c1", "肉桂→高血压 研究")
+    assert store.get("c1")["title"] == "肉桂→高血压 研究"
+    # 重命名不动消息
+    assert store.get("c1")["messages"] == [{"role": "user", "content": "肉桂"}]
+    # 列表也反映新标题
+    assert store.list()[0]["title"] == "肉桂→高血压 研究"
+    store.set_title("nope", "x")          # 不存在的 id 不报错
+
+
 def test_prune_keeps_newest(tmp_path):  # AC-7
     store = HistoryStore(str(tmp_path / "h.sqlite"))
     for i in range(5):

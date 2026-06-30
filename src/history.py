@@ -91,6 +91,13 @@ class HistoryStore:
                         "updated_at": r[3], "n_messages": n})
         return out
 
+    def set_title(self, conv_id: str, title: str) -> None:
+        """仅更新标题(重命名)。不存在的 id 静默忽略(幂等)。"""
+        with _LOCK:
+            self._conn.execute("UPDATE conversations SET title=? WHERE id=?",
+                               (title, conv_id))
+            self._conn.commit()
+
     def delete(self, conv_id: str) -> None:
         """删单条; 删不存在的 id 不报错(幂等)。"""
         with _LOCK:

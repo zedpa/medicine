@@ -81,6 +81,10 @@
 - **FR-T2.5** 自动保存：每轮对话产生新 assistant 回复后（现有 `st.rerun()` 前），用当前 `conv_id`/注入时间戳 `save`，并 `prune(history.max_conversations)`。
 - **FR-T2.6** 现有「清空对话」改为「清空当前对话内容」语义（只清屏不删历史库），与「删除会话」区分。
 - **FR-T2.7** `conv_id`/`created_at`/`updated_at` 由 UI 层生成（`uuid4`/`datetime.now().isoformat()`）后注入存储层——存储层保持纯净。
+- **FR-T2.8** 侧边栏风格仿 Claude 网页版：顶部醒目「✚ 新建对话」(primary)、「最近对话」分组、当前会话用
+  primary 高亮选中态（替代 🟢 emoji）；LLM 后端/示例/清空收进底部 `ℹ️` expander，列表更聚焦。
+- **FR-T2.9** 每条会话的管理操作收进行尾「⋯」三点菜单（`st.popover`）：✏️ 重命名（文本框+保存）、🗑 删除对话。
+- **FR-T2.10** 重命名走 `HistoryStore.set_title(id, title)`（仅改标题列，不动消息/结果，幂等），单测 `test_set_title_rename` 覆盖。
 
 ### 5.2 验收标准
 - **AC-9**（E2E，`tests/e2e/`）首轮查询后刷新页面，侧边栏「对话历史」仍可见该会话标题；点击能重现对话气泡。
