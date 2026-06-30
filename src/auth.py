@@ -76,6 +76,13 @@ class UserStore:
                                (password_hash, username))
             self._conn.commit()
 
+    def set_role(self, username: str, role: str) -> None:
+        """仅改角色(admin/user); 不存在的 username 静默忽略(幂等)。"""
+        with _LOCK:
+            self._conn.execute("UPDATE users SET role=? WHERE username=?",
+                               (role, username))
+            self._conn.commit()
+
     def delete(self, username: str) -> None:
         """删单条; 删不存在的 username 不报错(幂等)。"""
         with _LOCK:

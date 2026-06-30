@@ -102,6 +102,34 @@ class HistoryStore:
                         "updated_at": r[3], "n_messages": n})
         return out
 
+    def list_all(self, limit: Optional[int] = None) -> list:
+        """跨 owner 返回会话元信息(含 owner), updated_at 降序。仅供 admin 后台总览。"""
+        sql = ("SELECT id, owner, title, created_at, updated_at, messages_json "
+               "FROM conversations ORDER BY updated_at DESC")
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        out = []
+        for r in self._conn.execute(sql).fetchall():
+            try:
+                n = len(json.loads(r[5] or "[]"))
+            except (ValueError, TypeError):
+                n = 0
+            out.append({"id": r[0], "owner": r[1], "title": r[2], "created_at": r[3],
+                        "updated_at": r[4], "n_messages": n})
+        return out
+
+    def export_all(self) -> list:
+        """跨 owner 返回全量会话(含 messages + results), 供统计聚合。仅供 admin 调用。"""
+        rows = self._conn.execute(
+            "SELECT id, owner, title, created_at, updated_at, messages_json, results_json "
+            "FROM conversations"
+        ).fetchall()
+        return [{
+            "id": r[0], "owner": r[1], "title": r[2], "created_at": r[3],
+            "updated_at": r[4], "messages": json.loads(r[5] or "[]"),
+            "results": json.loads(r[6] or "[]"),
+        } for r in rows]
+
     def set_title(self, conv_id: str, owner: str, title: str) -> None:
         """仅更新标题(重命名)。跨 owner 或不存在的 id 静默忽略(幂等)。"""
         with _LOCK:

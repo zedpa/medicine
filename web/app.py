@@ -23,6 +23,7 @@ from src.config import load_config
 from src.auth import UserStore
 from src.history import HistoryStore, _derive_title
 from src.pipeline import result_to_snapshot, snapshot_to_result
+from src.stats import overview, per_user, herb_popularity, activity_by_day
 from src.viz import venn_png, bubble_png, network_png
 
 
@@ -136,9 +137,15 @@ if _acfg.get("enabled", True):
         st.stop()
     st.session_state.owner = st.session_state["username"]
     st.session_state.auth = _authr
+    # 角色以账号库为准(不依赖 stauth 内部 session 写入), 供后台门控
+    _me = _ustore.get(st.session_state.owner) or {}
+    st.session_state.role = _me.get("role", "user")
 else:
     st.session_state.owner = "default"          # 关闭认证时回退单租户
     st.session_state.auth = None
+    st.session_state.role = "admin"             # 关闭认证 -> 单租户全权
+if "view" not in st.session_state:
+    st.session_state.view = "chat"              # chat | admin
 
 # 切换登录用户时清空内存态, 防止上一用户的对话/结果残留泄漏
 if st.session_state.get("_auth_user") != st.session_state.owner:
@@ -205,9 +212,21 @@ with st.sidebar:
 
     # 底部: 账户 + 设置/状态收进 expander, 列表更聚焦(Claude 把账户信息放底部)
     st.divider()
+    # 管理后台入口: 仅 admin 可见(spec-005 FR-T2.1)
+    if st.session_state.get("role") == "admin":
+        if st.session_state.view == "admin":
+            if st.button("←　返回助手", use_container_width=True):
+                st.session_state.view = "chat"
+                st.rerun()
+        else:
+            if st.button("🛠　管理后台", use_container_width=True):
+                st.session_state.view = "admin"
+                st.rerun()
     if st.session_state.get("auth") is not None:
         _who, _out = st.columns([6, 3], vertical_alignment="center")
-        _who.caption(f"👤 {st.session_state.get('name') or st.session_state.owner}")
+        _role_badge = "管理员" if st.session_state.get("role") == "admin" else "用户"
+        _who.caption(f"👤 {st.session_state.get('name') or st.session_state.owner}"
+                     f"　·　{_role_badge}")
         with _out:
             st.session_state.auth.logout("登出", location="main",
                                          use_container_width=True)
@@ -299,6 +318,118 @@ def render_result(result, excel_path):
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                key=f"dl_{excel_path}_{s.get('unique_targets')}")
 
+
+def render_admin():
+    """管理后台(spec-005 T2): 统计看板 + 账号管理。仅 admin 进入。"""
+    st.subheader("🛠 管理后台")
+    store_h, _ = _history()
+    acfg = load_config().raw.get("admin", {}) or {}
+    top_n = int(acfg.get("herb_top_n", 10))
+    days = int(acfg.get("activity_days", 14))
+    users = _ustore.list_users()
+    convs = store_h.export_all()
+    n_admins = sum(1 for u in users if u.get("role") == "admin")
+    n_conv_by = {r["username"]: r["n_conversations"] for r in per_user(users, convs)}
+
+    tab_stat, tab_users = st.tabs(["📊 统计看板", "👥 账号管理"])
+
+    with tab_stat:
+        o = overview(users, convs)
+        c = st.columns(4)
+        c[0].metric("用户数", o["n_users"])
+        c[1].metric("会话总数", o["n_conversations"])
+        c[2].metric("消息总数", o["n_messages"])
+        c[3].metric("活跃用户", o["active_users"])
+        st.caption(f"其中管理员 {o['n_admins']} 人")
+
+        st.markdown(f"**热门药材 Top {top_n}**（基于真实跑出的分析结果）")
+        pop = herb_popularity(convs, top_n=top_n)
+        if pop:
+            dfp = pd.DataFrame(pop).rename(
+                columns={"herb": "药材", "count": "分析次数", "found": "成功命中"})
+            st.bar_chart(dfp.set_index("药材")["分析次数"], color="#3ba776")
+            st.dataframe(dfp, use_container_width=True, hide_index=True)
+        else:
+            st.info("暂无分析记录")
+
+        st.markdown(f"**近 {days} 天活跃趋势（新建会话数）**")
+        act = activity_by_day(convs, today=datetime.date.today().isoformat(), days=days)
+        dfa = pd.DataFrame(act).rename(columns={"date": "日期", "count": "新建会话"})
+        st.line_chart(dfa.set_index("日期")["新建会话"], color="#3ba776")
+
+        st.markdown("**各用户活跃度**")
+        dfu = pd.DataFrame(per_user(users, convs)).rename(columns={
+            "username": "用户名", "role": "角色", "n_conversations": "会话数",
+            "n_messages": "消息数", "last_active": "最近活跃"})
+        st.dataframe(dfu, use_container_width=True, hide_index=True)
+
+    with tab_users:
+        with st.expander("➕ 新建用户", expanded=False):
+            with st.form("new_user", clear_on_submit=True):
+                nu = st.text_input("用户名")
+                nn = st.text_input("姓名")
+                ne = st.text_input("邮箱")
+                npw = st.text_input("初始密码", type="password")
+                nr = st.selectbox("角色", ["user", "admin"])
+                if st.form_submit_button("创建", type="primary"):
+                    if not nu.strip():
+                        st.error("用户名必填")
+                    elif _ustore.get(nu.strip()):
+                        st.error("用户名已存在")
+                    elif not stauth.Validator().validate_password(npw):
+                        st.error("密码需 8–20 位且含大小写字母、数字、特殊字符")
+                    else:
+                        _ustore.upsert({"username": nu.strip(), "name": nn.strip() or nu.strip(),
+                                        "email": ne.strip(),
+                                        "password_hash": stauth.Hasher.hash(npw),
+                                        "role": nr, "created_at": _now_iso()})
+                        st.success(f"已创建用户 {nu.strip()}")
+                        st.rerun()
+
+        for u in users:
+            uname = u["username"]
+            is_self = uname == st.session_state.owner
+            is_last_admin = u.get("role") == "admin" and n_admins <= 1
+            # keyed 容器 -> DOM 带 class st-key-userrow_<uname>, 供 E2E 精确定位该行
+            with st.container(border=True, key=f"userrow_{uname}"):
+                c0, c1, c2, c3 = st.columns([3, 3, 2, 1], vertical_alignment="center")
+                c0.markdown(f"**{uname}**　`{u.get('role', 'user')}`")
+                c1.caption(f"{u.get('name', '')} · {u.get('email', '') or '—'} · "
+                           f"{n_conv_by.get(uname, 0)} 会话")
+                # 改角色
+                with c2.popover("角色", use_container_width=True):
+                    if is_last_admin:
+                        st.caption("末位管理员不可降级")
+                    else:
+                        _target = "user" if u.get("role") == "admin" else "admin"
+                        if st.button(f"设为 {_target}", key=f"role_{uname}",
+                                     use_container_width=True):
+                            _ustore.set_role(uname, _target)
+                            st.rerun()
+                # 重置密码 / 删除
+                with c3.popover("⋯", use_container_width=True):
+                    _npw = st.text_input("新密码", type="password", key=f"pw_{uname}",
+                                         label_visibility="collapsed", placeholder="新密码")
+                    if st.button("🔑 重置密码", key=f"rstpw_{uname}", use_container_width=True):
+                        if stauth.Validator().validate_password(_npw):
+                            _ustore.set_password(uname, stauth.Hasher.hash(_npw))
+                            st.success("已重置")
+                        else:
+                            st.error("密码不合规（8–20 位，含大小写/数字/特殊字符）")
+                    st.divider()
+                    if is_self:
+                        st.caption("不可删除自己")
+                    elif is_last_admin:
+                        st.caption("末位管理员不可删除")
+                    elif st.button("🗑 删除用户", key=f"del_{uname}", use_container_width=True):
+                        _ustore.delete(uname)
+                        st.rerun()
+
+
+# admin 视图替换主区(spec-005 FR-T2.2): 仅 admin 且 view==admin
+if st.session_state.get("role") == "admin" and st.session_state.view == "admin":
+    render_admin()
+    st.stop()
 
 # 历史消息
 for m in st.session_state.messages:

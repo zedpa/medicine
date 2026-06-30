@@ -2,6 +2,20 @@
 
 记录所有归一化口径、阈值、物种、去重规则的变更（见 `config/pipeline.yaml`）。
 
+## 2026-06-30 · 账号管理后台 + 统计看板（spec-005）
+- 新增 `config/pipeline.yaml › admin`：`herb_top_n`(看板热门药材 Top N)、
+  `activity_days`(活跃趋势回看天数)。
+- 新增统计聚合层 `src/stats.py`（纯函数 `overview/per_user/herb_popularity/
+  activity_by_day`，「今天」由调用方注入 → 确定性可测；热门药材基于**真实跑出的
+  结果快照**，名称优先级 chinese>latin>query，仅计 found=True 为成功命中）。
+- store 支撑：`UserStore.set_role`；`HistoryStore.list_all/export_all`（跨 owner，仅 admin 调用）。
+- web 管理后台（仅 `role==admin` 可见可达）：统计看板（4 指标 + 热门药材条形图 +
+  近 N 天活跃折线 + 各用户活跃度表）；账号管理（新建/改角色/重置密码/删除用户）。
+- 安全护栏：**不可删除自己**、**不可删除或降级最后一个 admin**（系统至少留 1 admin）；
+  新建/重置密码走 stauth 口令策略 + bcrypt 哈希。
+- 测试：T1 stats 9 单测（含 set_role/export_all）；T2 E2E 角色门 + 看板 + 增删改用户 +
+  末位 admin 保护 4 用例。口径仅在 config，记此。
+
 ## 2026-06-30 · 账号授权与多租户（spec-004）
 - 引入 `streamlit-authenticator`（v0.4.2，bcrypt + Cookie/JWT 会话）做登录/注册/登出，
   调研后取自包含方案而非外部 OIDC/IdP（自托管、无企业 IdP，最契合）。

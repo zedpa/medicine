@@ -71,6 +71,11 @@ auth:
   allow_self_register: true         # 是否开放自助注册
   default_role: "user"              # 自助注册默认角色（admin/user）
 
+# 管理后台 + 统计看板（spec-005，仅 admin 可见）
+admin:
+  herb_top_n: 10                    # 看板「热门药材」取前 N
+  activity_days: 14                 # 看板「活跃趋势」回看天数
+
 # 外部服务
 services:
   pubchem_base: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
