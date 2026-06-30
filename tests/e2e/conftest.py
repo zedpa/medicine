@@ -5,6 +5,7 @@
 import os
 import socket
 import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -13,6 +14,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PORT = 8599
 BASE_URL = f"http://127.0.0.1:{PORT}"
+# E2E 历史库隔离: 不污染真实 data/history.sqlite
+HISTORY_DB = os.path.join(tempfile.gettempdir(), "tcm_e2e_history.sqlite")
 
 
 def _free(port):
@@ -41,6 +44,10 @@ def streamlit_server():
     # 清除 LLM 密钥 -> 直接模式(确定性, 不触 LLM/不计费)
     env = {k: v for k, v in os.environ.items()
            if k not in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")}
+    # 历史库指向临时文件并清空, 保证本轮 E2E 干净起步
+    if os.path.exists(HISTORY_DB):
+        os.remove(HISTORY_DB)
+    env["HISTORY_DB_PATH"] = HISTORY_DB
     venv_py = os.path.join(ROOT, ".venv", "bin", "streamlit")
     proc = subprocess.Popen(
         [venv_py, "run", "web/app.py",

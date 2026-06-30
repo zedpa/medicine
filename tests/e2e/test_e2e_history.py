@@ -1,0 +1,89 @@
+"""spec-003 T2 验收 AC-9…AC-11: 侧边栏对话历史(持久化/新建保留/删除落库)。
+
+用「未知药材」做查询: 触发友好告警即产生一轮对话(user+assistant), 秒级完成,
+避免全管道开销; 历史落库正确性已由 T1 单测覆盖, 此处只验 UI 行为。
+历史库经 conftest 指向临时文件并清空, 不污染真实数据。
+"""
+SIDEBAR = '[data-testid="stSidebar"]'
+
+
+def _ask(page, text):
+    chat = page.locator('[data-testid="stChatInput"] textarea')
+    chat.fill(text)
+    chat.press("Enter")
+    # 未知药材 -> 友好告警; 出现即说明该轮对话已完成并自动落库
+    page.get_by_test_id("stAlertContentWarning").first.wait_for(timeout=120_000)
+
+
+def test_history_persists_after_reload(page_to_app):  # AC-9
+    page = page_to_app
+    q = "历史甲药xyz"
+    _ask(page, q)
+    # 侧边栏出现该会话标题
+    page.locator(SIDEBAR).get_by_text(q, exact=False).first.wait_for(timeout=30_000)
+    # 刷新页面(新会话, session_state 重置) -> 历史仍在(证明落库, 非内存)
+    page.reload(wait_until="domcontentloaded")
+    page.locator(SIDEBAR).get_by_text(q, exact=False).first.wait_for(timeout=30_000)
+    # 点击历史项 -> 对话气泡重现
+    page.locator(SIDEBAR).get_by_text(q, exact=False).first.click()
+    bubble = page.locator('[data-testid="stChatMessage"]').get_by_text(q, exact=False)
+    bubble.first.wait_for(timeout=30_000)
+    assert bubble.first.is_visible()
+
+
+def test_new_conversation_keeps_history(page_to_app):  # AC-10
+    page = page_to_app
+    q = "历史乙药xyz"
+    _ask(page, q)
+    page.locator(SIDEBAR).get_by_text(q, exact=False).first.wait_for(timeout=30_000)
+    # 新建对话: 主区清空, 但侧边栏历史保留上一会话
+    page.get_by_role("button", name="➕ 新建对话").click()
+    page.wait_for_timeout(1500)
+    assert page.locator('[data-testid="stChatMessage"]').count() == 0   # 主区已清空
+    assert page.locator(SIDEBAR).get_by_text(q, exact=False).first.is_visible()  # 历史仍在
+    # 点回上一会话 -> 恢复其消息
+    page.locator(SIDEBAR).get_by_text(q, exact=False).first.click()
+    page.locator('[data-testid="stChatMessage"]').get_by_text(q, exact=False).first.wait_for(timeout=30_000)
+
+
+def test_snapshot_restores_result_panel(page_to_app):  # AC-15
+    """跑出带图表的分析 → 新建对话 → 点回该会话: 结果面板与 PPI 图重新出现(快照重显)。"""
+    page = page_to_app
+    chat = page.locator('[data-testid="stChatInput"] textarea')
+    chat.fill("肉桂")
+    chat.press("Enter")
+    page.get_by_text("分析结果").wait_for(timeout=180_000)
+    page.get_by_role("tab", name="PPI 网络").click()
+    page.wait_for_timeout(1500)
+    assert page.locator('[data-testid="stImage"] img').count() >= 1
+
+    # 新建对话: 结果面板消失
+    page.get_by_role("button", name="➕ 新建对话").click()
+    page.wait_for_timeout(1500)
+    assert page.get_by_text("分析结果").count() == 0
+
+    # 点回「肉桂」会话: 结果面板 + PPI 图重新出现(证明快照重显, 非空白)
+    # 注: 用 button role 定位会话项, 避开侧栏「示例: 肉桂」说明文字
+    page.locator(SIDEBAR).get_by_role("button", name="肉桂").first.click()
+    page.get_by_text("分析结果").wait_for(timeout=60_000)
+    page.get_by_role("tab", name="PPI 网络").click()
+    page.wait_for_timeout(1500)
+    assert page.locator('[data-testid="stImage"] img').count() >= 1
+
+
+def test_delete_removes_conversation(page_to_app):  # AC-11
+    page = page_to_app
+    q = "历史丙药xyz"
+    _ask(page, q)
+    sidebar = page.locator(SIDEBAR)
+    sidebar.get_by_text(q, exact=False).first.wait_for(timeout=30_000)
+    # 找到该会话所在行的 🗑 删除
+    row = sidebar.locator('[data-testid="stHorizontalBlock"]').filter(has_text=q)
+    row.get_by_role("button", name="🗑").first.click()
+    page.wait_for_timeout(1500)
+    assert sidebar.get_by_text(q, exact=False).count() == 0      # 从侧边栏消失
+    # 刷新后不复现(确认落库删除)
+    page.reload(wait_until="domcontentloaded")
+    page.locator(SIDEBAR).wait_for(timeout=30_000)
+    page.wait_for_timeout(1000)
+    assert page.locator(SIDEBAR).get_by_text(q, exact=False).count() == 0

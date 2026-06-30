@@ -5,16 +5,57 @@
 """
 from __future__ import annotations
 
+import datetime
 import os
 import sys
+import uuid
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 import pandas as pd
 import streamlit as st
 
 from agent.agent import respond
+from src.config import load_config
+from src.history import HistoryStore, _derive_title
+from src.pipeline import result_to_snapshot, snapshot_to_result
 from src.viz import venn_png, bubble_png, network_png
+
+
+@st.cache_resource
+def _history():
+    """历史存储 + 配置。db_path 可被环境变量 HISTORY_DB_PATH 覆盖(供 E2E 隔离)。"""
+    hcfg = load_config().raw.get("history", {}) or {}
+    db = os.environ.get("HISTORY_DB_PATH") or hcfg.get("db_path", "data/history.sqlite")
+    if not os.path.isabs(db):
+        db = os.path.join(ROOT, db)
+    return HistoryStore(db), hcfg
+
+
+def _now_iso():
+    # 时间由 UI 层生成后注入存储层(存储层保持纯净, 见 spec-003 §3)
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _save_current():
+    """把当前会话落库(空会话跳过); 标题取首条用户消息, 并按上限裁剪。"""
+    msgs = st.session_state.messages
+    if not msgs:
+        return
+    store, hcfg = _history()
+    cid = st.session_state.conv_id
+    prev = store.get(cid)
+    snaps = [result_to_snapshot(r, path) for r, path in st.session_state.results]
+    store.save({
+        "id": cid,
+        "title": _derive_title(msgs, int(hcfg.get("title_max_len", 24))),
+        "created_at": prev["created_at"] if prev else _now_iso(),
+        "updated_at": _now_iso(),
+        "messages": msgs,
+        "results": snaps,            # T3: 结果快照随会话落库, 切回时重显面板
+    })
+    store.prune(int(hcfg.get("max_conversations", 50)))
 
 st.set_page_config(page_title="中药网络药理学助手", page_icon="🌿", layout="wide")
 st.title("🌿 中药网络药理学一站式助手")
@@ -24,6 +65,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "results" not in st.session_state:
     st.session_state.results = []  # (PipelineResult, excel_path)
+if "conv_id" not in st.session_state:
+    st.session_state.conv_id = uuid.uuid4().hex
 
 with st.sidebar:
     st.subheader("状态")
@@ -37,10 +80,44 @@ with st.sidebar:
         _backend = "直接模式(无 LLM, 输入即药材名)"
     st.write("LLM 后端:", _backend)
     st.markdown("**示例**: `肉桂` / `黄芪, 当归` / `Cinnamomum cassia`")
-    if st.button("清空对话"):
+    if st.button("清空当前对话内容"):
+        # 仅清屏(不删历史库): 历史会话仍保留在侧边栏
         st.session_state.messages = []
         st.session_state.results = []
         st.rerun()
+
+    st.divider()
+    st.subheader("💬 对话历史")
+    _store, _hcfg = _history()
+    if st.button("➕ 新建对话", use_container_width=True):
+        _save_current()                       # 先把当前会话落库
+        st.session_state.messages = []
+        st.session_state.results = []
+        st.session_state.conv_id = uuid.uuid4().hex
+        st.rerun()
+
+    _convs = _store.list(limit=int(_hcfg.get("max_conversations", 50)))
+    if not _convs:
+        st.caption("暂无历史，开始第一轮提问吧")
+    for _c in _convs:
+        _open, _del = st.columns([5, 1])
+        _cur = _c["id"] == st.session_state.conv_id
+        _label = ("🟢 " if _cur else "") + (_c["title"] or "新对话")
+        if _open.button(_label, key=f"open_{_c['id']}", use_container_width=True):
+            _loaded = _store.get(_c["id"]) or {}
+            st.session_state.messages = _loaded.get("messages", [])
+            # T3: 从快照重建结果, 切回会话即重显表/图/下载面板
+            st.session_state.results = [snapshot_to_result(s)
+                                        for s in _loaded.get("results", [])]
+            st.session_state.conv_id = _c["id"]
+            st.rerun()
+        if _del.button("🗑", key=f"del_{_c['id']}"):
+            _store.delete(_c["id"])
+            if _c["id"] == st.session_state.conv_id:
+                st.session_state.messages = []
+                st.session_state.results = []
+                st.session_state.conv_id = uuid.uuid4().hex
+            st.rerun()
 
 
 def render_result(result, excel_path):
@@ -147,4 +224,5 @@ if prompt := st.chat_input("输入药材名, 例如: 肉桂"):
 
     st.session_state.messages.append({"role": "assistant", "content": reply})
     st.session_state.results.extend(new_results)
+    _save_current()          # 每轮回复后自动落库当前会话(FR-T2.5)
     st.rerun()

@@ -54,6 +54,13 @@ enrichment:
   top_n: 20                        # 每库保留前 N 条（按 combined score）
   timeout: 30
 
+# 对话历史（侧边栏持久化会话，spec-003）
+history:
+  enabled: true
+  db_path: "data/history.sqlite"    # 独立于 cache.sqlite
+  max_conversations: 50             # 侧边栏列出 / 保留上限（prune）
+  title_max_len: 24                 # 会话标题截断长度
+
 # 外部服务
 services:
   pubchem_base: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"

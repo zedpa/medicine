@@ -6,6 +6,7 @@ __pycache__/
 
 # 本地缓存与产物
 data/cache/
+data/*.sqlite
 outputs/
 
 # 第三方数据库 dump 不入库(部署时用 scripts/fetch_batman.sh 拉取)

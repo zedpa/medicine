@@ -38,6 +38,27 @@ class PipelineResult:
     message: str = ""
 
 
+# ---------------- 结果快照(spec-003 T3): 会话历史重显结果面板 ----------------
+# PipelineResult 全字段为 dict/list/str/bool, 本就 JSON 可序列化; 快照只做字段选取 + JSON 往返,
+# 图表由 viz 从这些 dict 现场重渲(不持久化 PNG)。
+_SNAPSHOT_FIELDS = (
+    "query", "found", "herb", "config_snapshot", "compounds", "compound_targets",
+    "proteins", "disease", "intersection", "ppi", "enrichment", "stats", "message",
+)
+
+
+def result_to_snapshot(result: "PipelineResult", excel_path: Optional[str] = None) -> dict:
+    """抽取渲染所需字段 + excel_path, 产出 JSON 可序列化的快照。"""
+    return {"result": {f: getattr(result, f) for f in _SNAPSHOT_FIELDS},
+            "excel_path": excel_path}
+
+
+def snapshot_to_result(snap: dict):
+    """从快照重建 (PipelineResult, excel_path)；与原对象字段相等(往返无损)。"""
+    data = {f: snap["result"][f] for f in _SNAPSHOT_FIELDS if f in snap["result"]}
+    return PipelineResult(**data), snap.get("excel_path")
+
+
 def _progress(cb: Optional[Callable[[str], None]], msg: str) -> None:
     if cb:
         cb(msg)

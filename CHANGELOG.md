@@ -25,6 +25,39 @@
 - 验证：肉桂 TCMSP 99 分子→77 解析 InChIKey；肉桂醛真实 OB=32.0/DL=0.023。
   注：肉桂全库最大 DL=0.154<0.18，严格阈值下 0 通过（真实数据，非 bug）。
 
+## 2026-06-30 · 结果快照: 切换历史会话重显结果面板 (spec-003 T3) — 历史 T1–T3 全部完成
+- 新增 `src/pipeline.py › result_to_snapshot/snapshot_to_result` 纯函数：PipelineResult 全字段本就
+  JSON 可序列化 → 快照只做字段选取 + JSON 往返；图表(venn/ppi/enrichment)切回会话时由 viz 从 dict
+  现场重渲，不持久化 PNG。
+- `src/history.py`：会话记录增 `results`(快照列表) → `results_json` 列；旧库自动迁移
+  (`ALTER TABLE ADD COLUMN`)，旧会话 `get` 返回 `results=[]`(向后兼容)。
+- `web/app.py`：`_save_current` 把 `session_state.results` 转快照随会话落库；点击历史会话用
+  `snapshot_to_result` 重建结果，表/图/下载面板随之重现。Excel 若已不在 outputs/ 则仅少一个下载按钮。
+- SDD 红-绿：新增 `tests/test_snapshot.py` 4 条(JSON 可序列化 / dataclass 往返相等 / 历史携带快照 /
+  无快照向后兼容)；E2E 增 AC-15(跑出图表→新建→点回该会话→PPI 图重现)。
+- 验证：单测 **43 passed**；E2E **7 passed**。spec-003(侧边栏对话历史)T1–T3 收口。
+
+## 2026-06-30 · 侧边栏对话历史 UI 接入 (spec-003 T2) — 历史 T1+T2 完成
+- `web/app.py`：侧边栏增「💬 对话历史」区(最近在上)：➕ 新建对话 / 点击切换载入 / 🗑 删除；
+  每轮回复后自动落库当前会话(`_save_current` + `prune`)；「清空对话」改为「清空当前对话内容」
+  (仅清屏不删历史库)。`conv_id`/时间戳由 UI 层(uuid4/datetime)生成后注入存储层(存储层保持纯净)。
+  store 用 `@st.cache_resource` 复用连接；db_path 可被 `HISTORY_DB_PATH` 覆盖(供 E2E 隔离)。
+- `tests/e2e/`：新增 `test_e2e_history.py`(AC-9 刷新后历史仍在并可点击重现 / AC-10 新建保留旧会话可恢复 /
+  AC-11 删除从侧栏消失且刷新不复现)；conftest 把历史库指向临时文件并清空，不污染真实数据。
+- 边界(如实声明)：切换历史会话只重现**对话文本**，**不重显图表/结果面板**(留给 T3)。
+- 纯展示/持久化接入，无业务口径变更。验证：单测 39 passed；E2E 6 passed(原 3 + 历史 3)。
+
+## 2026-06-30 · 新增 对话历史存储层 (spec-003 T1)
+- 新增 `history` 段：`enabled=true`、`db_path=data/history.sqlite`(独立于 cache.sqlite)、
+  `max_conversations=50`(侧边栏列出 / prune 保留上限)、`title_max_len=24`(标题截断)。
+- 新增 `src/history.py`：`HistoryStore`(sqlite 持久化会话 save/get/list/delete/prune) +
+  `_derive_title` 纯函数。时间戳/id 由调用方注入(存储层不调 datetime.now()/uuid)→ 确定性可单测；
+  `list()` 只返回元信息(含 n_messages, 不含 messages 正文)避免历史长时拉全文。
+- `.gitignore` 增 `data/*.sqlite`(本地用户数据, 不预置会话, P3)。
+- 无业务口径/阈值变更(纯持久化层)，仅新增存储位置/容量配置。
+- SDD 红-绿：`tests/test_history.py` 8 条(标题截断/中文不坏/upsert 覆盖/降序+limit/幂等删/
+  prune 留最新 N/二次实例读落盘)全绿；全套 39 passed 无回归。T2 侧边栏 UI 接入为后续切片。
+
 ## 2026-06-30 · Playwright 实景测试发现并修复 3 个图表问题 (spec-002 §10)
 - 用 LLM(DeepSeek)模式 + Playwright MCP 真浏览器跑「肉桂治疗高血压」, 目检三类图表, 暴露:
   1. **中文病名未命中**: Open Targets 检索「高血压」失败 → 加 中->英 病名别名表(`_DISEASE_ALIASES`)
