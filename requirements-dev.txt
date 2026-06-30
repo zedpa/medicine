@@ -1,0 +1,5 @@
+# 测试用依赖（生产部署不需要）。安装后还需 `python -m playwright install chromium`。
+-r requirements.txt
+pytest
+playwright
+pytest-playwright

@@ -6,3 +6,5 @@ pyyaml
 streamlit
 anthropic
 openai
+matplotlib
+matplotlib-venn

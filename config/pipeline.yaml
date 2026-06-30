@@ -27,6 +27,33 @@ targets:
   use_predicted: true      # BATMAN 预测 TTI（Entrez ID + score）
   predicted_score_min: 0.4 # 预测靶点分数下限（FR-4.3）；2026-06-25 由 0.5 下调至 0.4
 
+# 疾病靶点（T1：药物靶点 × 疾病靶点 交集）。数据源 Open Targets Platform（免密钥）。
+disease:
+  base_url: "https://api.platform.opentargets.org/api/v4/graphql"
+  score_min: 0.1        # 关联强度下限（0~1）；越高越严
+  max_targets: 3000     # 单疾病最多取多少关联靶点
+  timeout: 30
+
+# PPI 蛋白互作网络（T3）。数据源 STRING（免密钥）。靶点优先用 药物×疾病 交集。
+ppi:
+  enabled: true
+  base_url: "https://string-db.org/api"
+  species: 9606
+  score_min: 0.4        # STRING combined score（0~1），0.4≈中等置信(400)
+  max_nodes: 200        # 送入 STRING 的最大基因数（过多会拖慢/被限流）
+  timeout: 30
+
+# GO/KEGG 富集分析（T4）。数据源 Enrichr（免密钥）。靶点优先用 药物×疾病 交集。
+enrichment:
+  enabled: true
+  base_url: "https://maayanlab.cloud/Enrichr"
+  libraries:                       # 库 -> Excel sheet 名见 src/excel_export.py
+    - "GO_Biological_Process_2021"
+    - "KEGG_2021_Human"
+  adj_p_max: 0.05                  # BH 校正 p 值上限（显著性）
+  top_n: 20                        # 每库保留前 N 条（按 combined score）
+  timeout: 30
+
 # 外部服务
 services:
   pubchem_base: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"

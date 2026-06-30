@@ -11,7 +11,11 @@ from . import batman
 from .adme import AdmeFilter
 from .cache import Cache
 from .config import load_config
+from .disease import DiseaseClient
+from .enrichment import EnrichrClient
+from .intersect import intersect_targets
 from .online import OnlineClients
+from .ppi import StringClient, hub_genes
 from .tcmsp import TcmspClient
 
 SOURCE_DB = "BATMAN-TCM 2.0"
@@ -26,6 +30,10 @@ class PipelineResult:
     compounds: list[dict] = field(default_factory=list)        # 成分表(含 ADME)
     compound_targets: list[dict] = field(default_factory=list) # 成分-靶点 long
     proteins: list[dict] = field(default_factory=list)         # 靶点蛋白信息表
+    disease: Optional[dict] = None         # T1: 疾病靶点(提供 disease 时)
+    intersection: Optional[dict] = None    # T1: 药物×疾病 交集(韦恩就绪)
+    ppi: Optional[dict] = None             # T3: STRING PPI 网络(nodes/edges/hubs)
+    enrichment: Optional[dict] = None      # T4: GO/KEGG 富集(按库分组)
     stats: dict = field(default_factory=dict)
     message: str = ""
 
@@ -35,7 +43,8 @@ def _progress(cb: Optional[Callable[[str], None]], msg: str) -> None:
         cb(msg)
 
 
-def run_herb(query: str, progress: Optional[Callable[[str], None]] = None) -> PipelineResult:
+def run_herb(query: str, progress: Optional[Callable[[str], None]] = None,
+             disease: Optional[str] = None) -> PipelineResult:
     cfg = load_config()
     db = batman.get_db()
     cache = Cache(cfg.path("cache_db"))
@@ -128,6 +137,15 @@ def run_herb(query: str, progress: Optional[Callable[[str], None]] = None) -> Pi
         up = online.uniprot_by_symbol(sym)
         result.proteins.append(up)
 
+    # ⑥ 疾病靶点 + 交集 (T1, 仅当提供 disease)
+    _attach_disease(result, gene_set, cfg, cache, disease, progress)
+
+    # ⑦ PPI 蛋白互作网络 (T3, 优先用交集靶点)
+    _attach_ppi(result, gene_set, cfg, cache, progress)
+
+    # ⑧ GO/KEGG 富集分析 (T4, 优先用交集靶点)
+    _attach_enrichment(result, gene_set, cfg, cache, progress)
+
     result.stats = {
         "ingredients_total": n_total,
         "compounds_passed_adme": len(passed_compounds),
@@ -135,11 +153,104 @@ def run_herb(query: str, progress: Optional[Callable[[str], None]] = None) -> Pi
         "unique_targets": len(gene_set),
         "targets_with_uniprot": sum(1 for p in result.proteins if p.get("accession")),
     }
+    if result.intersection is not None:
+        result.stats["disease_targets"] = result.disease.get("n", 0)
+        result.stats["intersection_targets"] = result.intersection["counts"]["intersection"]
+    if result.ppi is not None:
+        result.stats["ppi_nodes"] = result.ppi["n_nodes"]
+        result.stats["ppi_edges"] = result.ppi["n_edges"]
+    if result.enrichment is not None:
+        result.stats["enrichment_terms"] = sum(len(v) for v in result.enrichment.values())
     result.message = (f"{result.herb['chinese'] or result.herb['latin']}: "
                       f"成分 {n_total} → 通过ADME {len(passed_compounds)} → "
                       f"靶点 {len(gene_set)} 个 (关系 {len(result.compound_targets)} 条)")
+    if result.intersection is not None:
+        result.message += (f"；疾病「{result.disease.get('query')}」靶点 "
+                           f"{result.disease.get('n', 0)} 个 → 交集 "
+                           f"{result.intersection['counts']['intersection']} 个")
     _progress(progress, "✓ 完成")
     return result
+
+
+def _attach_disease(result: PipelineResult, gene_set, cfg, cache, disease, progress) -> None:
+    """T1: 提供 disease 时, 拉疾病靶点并与药物靶点取交集, 挂到 result。
+
+    disease=None -> result.disease / result.intersection 保持 None (向后兼容)。
+    无命中 -> disease.found=False, 交集对空疾病集计算 (仍给出 counts)。
+    """
+    if not disease:
+        result.disease = None
+        result.intersection = None
+        return
+    _progress(progress, f"⑥ 疾病靶点 + 交集: {disease}")
+    client = DiseaseClient(cfg, cache)
+    dz = client.disease_targets(disease)
+    result.disease = dz
+    disease_genes = {g["symbol"] for g in dz.get("genes", [])}
+    result.intersection = intersect_targets(set(gene_set), disease_genes)
+    if dz.get("found"):
+        _progress(progress, f"   疾病「{disease}」(EFO {dz.get('efo_id')}) 靶点 {dz['n']} 个, "
+                            f"交集 {result.intersection['counts']['intersection']} 个")
+    else:
+        _progress(progress, f"   未在 Open Targets 命中疾病「{disease}」")
+
+
+def _pick_genes(result: PipelineResult, gene_set):
+    """下游分析(PPI/富集)的靶点选取: 药物×疾病交集非空时优先, 否则全部药物靶点。"""
+    inter = getattr(result, "intersection", None)
+    if inter and inter.get("intersection"):
+        return list(inter["intersection"]), "交集靶点"
+    return sorted(gene_set), "全部药物靶点"
+
+
+def _attach_ppi(result: PipelineResult, gene_set, cfg, cache, progress) -> None:
+    """T3: 构建 STRING PPI 网络并挂到 result。
+
+    靶点优先用 药物×疾病 交集(非空时), 否则用全部药物靶点; <2 基因或 disabled 时跳过。
+    """
+    pcfg = cfg.raw.get("ppi", {})
+    if not pcfg.get("enabled", True):
+        result.ppi = None
+        return
+    genes, basis = _pick_genes(result, gene_set)
+    if len(genes) < 2:
+        result.ppi = None
+        return
+    _progress(progress, f"⑦ STRING PPI 网络 ({basis}, {len(genes)} 个基因)")
+    client = StringClient(cfg, cache)
+    net = client.network(genes)
+    net["hubs"] = hub_genes(net["edges"])
+    net["basis"] = basis
+    result.ppi = net
+    top = ", ".join(f"{h['gene']}({h['degree']})" for h in net["hubs"][:5])
+    _progress(progress, f"   节点 {net['n_nodes']} / 边 {net['n_edges']}; hub: {top}")
+
+
+def _attach_enrichment(result: PipelineResult, gene_set, cfg, cache, progress) -> None:
+    """T4: GO/KEGG 富集分析并挂到 result(按库分组)。
+
+    靶点优先用 药物×疾病 交集(非空时), 否则用全部药物靶点; <3 基因或 disabled 时跳过。
+    """
+    ecfg = cfg.raw.get("enrichment", {})
+    if not ecfg.get("enabled", True):
+        result.enrichment = None
+        return
+    genes, basis = _pick_genes(result, gene_set)
+    if len(genes) < 3:
+        result.enrichment = None
+        return
+    libraries = ecfg.get("libraries", [])
+    _progress(progress, f"⑧ GO/KEGG 富集 ({basis}, {len(genes)} 个基因, {len(libraries)} 个库)")
+    client = EnrichrClient(cfg, cache)
+    grouped: dict = {}
+    for lib in libraries:
+        rows = client.enrich(genes, lib)
+        grouped[lib] = rows
+        if rows:
+            _progress(progress, f"   {lib}: {len(rows)} 条显著; top: {rows[0]['term']}")
+        else:
+            _progress(progress, f"   {lib}: 无显著富集项")
+    result.enrichment = grouped
 
 
 def _build_adme(cfg, match, online, progress) -> AdmeFilter:

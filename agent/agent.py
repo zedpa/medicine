@@ -32,7 +32,11 @@ TOOL_PARAMS = {
             "type": "array",
             "items": {"type": "string"},
             "description": "药材名列表, 如 ['肉桂'] 或 ['黄芪','当归']。支持中文名/拼音/拉丁学名。",
-        }
+        },
+        "disease": {
+            "type": "string",
+            "description": "可选。疾病名(中/英), 如 '高血压'。提供时额外做疾病靶点 + 药物×疾病交集。",
+        },
     },
     "required": ["herbs"],
 }
@@ -40,7 +44,10 @@ TOOL_PARAMS = {
 SYSTEM = (
     "你是中药网络药理学助手。用户给出中药名时, 调用 analyze_herbs 工具跑管道并拿到结果, "
     "然后用中文简明汇报: 药材匹配情况、通过 ADME 的成分数、去重靶点数、几个代表性靶点基因, "
-    "并提示完整结果已导出为 Excel(含 SMILES/InChIKey/UniProt 信息)。不要编造数据库里没有的靶点。"
+    "并提示完整结果已导出为 Excel(含 SMILES/InChIKey/UniProt 信息)。"
+    "若用户同时提到某疾病, 把疾病名放进 disease 参数, 并汇报疾病靶点数与交集靶点(潜在作用靶点), "
+    "以及 PPI 网络的 hub 核心靶点、GO/KEGG 富集的代表性通路。"
+    "不要编造数据库里没有的靶点或通路。"
 )
 
 
@@ -48,9 +55,10 @@ def _safe(name: str) -> str:
     return re.sub(r"[^\w\-]+", "_", name).strip("_") or "herb"
 
 
-def run_pipeline_for(query: str, on_progress: Optional[Callable[[str], None]] = None
+def run_pipeline_for(query: str, on_progress: Optional[Callable[[str], None]] = None,
+                     disease: Optional[str] = None
                      ) -> tuple[PipelineResult, Optional[str]]:
-    result = run_herb(query, progress=on_progress)
+    result = run_herb(query, progress=on_progress, disease=disease)
     excel_path = None
     if result.found:
         excel_path = export(result, f"outputs/{_safe(result.herb.get('pinyin') or query)}.xlsx")
@@ -62,20 +70,40 @@ def _tool_summary(result: PipelineResult, excel_path: Optional[str]) -> dict:
         return {"query": result.query, "found": False, "message": result.message}
     known = [t["gene_symbol"] for t in result.compound_targets if t["evidence"] == "known"]
     sample = sorted(set(known))[:15] or sorted({t["gene_symbol"] for t in result.compound_targets})[:15]
-    return {
+    out = {
         "query": result.query, "found": True,
         "herb": {"chinese": result.herb.get("chinese"), "latin": result.herb.get("latin")},
         "adme_mode": result.config_snapshot.get("adme_mode"),
         "stats": result.stats, "sample_targets": sample, "excel_path": excel_path,
     }
+    if result.intersection is not None:
+        out["disease"] = {
+            "query": result.disease.get("query"), "found": result.disease.get("found"),
+            "n_disease_targets": result.disease.get("n"),
+            "intersection": result.intersection["intersection"][:30],
+            "n_intersection": result.intersection["counts"]["intersection"],
+        }
+    if result.ppi is not None:
+        out["ppi"] = {
+            "basis": result.ppi.get("basis"),
+            "n_nodes": result.ppi.get("n_nodes"), "n_edges": result.ppi.get("n_edges"),
+            "hub_genes": [h["gene"] for h in result.ppi.get("hubs", [])[:10]],
+        }
+    if result.enrichment is not None:
+        out["enrichment"] = {
+            lib: [r["term"] for r in rows[:8]]
+            for lib, rows in result.enrichment.items()
+        }
+    return out
 
 
 def _execute_tool(args: dict, on_result, on_progress) -> str:
     """执行 analyze_herbs, 返回 JSON 字符串(给 LLM 看)。"""
     herbs = args.get("herbs", []) if isinstance(args, dict) else []
+    disease = args.get("disease") if isinstance(args, dict) else None
     summaries = []
     for h in herbs:
-        result, path = run_pipeline_for(h, on_progress)
+        result, path = run_pipeline_for(h, on_progress, disease=disease)
         if on_result:
             on_result(result, path)
         summaries.append(_tool_summary(result, path))

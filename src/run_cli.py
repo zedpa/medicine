@@ -1,6 +1,7 @@
-"""命令行入口: python -m src.run_cli 肉桂 [更多药材...]
+"""命令行入口: python -m src.run_cli 肉桂 [更多药材...] [--disease 疾病名]
 
 每味药材跑完整管道并导出 outputs/<拼音或查询>.xlsx。
+提供 --disease 时, 额外做 疾病靶点 + 药物×疾病 交集 (T1)。
 """
 from __future__ import annotations
 
@@ -16,12 +17,17 @@ def _safe(name: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    disease = None
+    if "--disease" in argv:
+        i = argv.index("--disease")
+        disease = argv[i + 1] if i + 1 < len(argv) else None
+        argv = argv[:i] + argv[i + 2:]
     if not argv:
-        print("用法: python -m src.run_cli <药材名> [药材名...]")
+        print("用法: python -m src.run_cli <药材名> [药材名...] [--disease 疾病名]")
         return 2
     for query in argv:
         print(f"\n===== {query} =====")
-        result = run_herb(query, progress=lambda m: print("  " + m))
+        result = run_herb(query, progress=lambda m: print("  " + m), disease=disease)
         if not result.found:
             print("  " + result.message)
             continue

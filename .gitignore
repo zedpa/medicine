@@ -14,3 +14,13 @@ data/raw/batman/*.txt.gz
 
 # 本地编辑器/工具配置
 .claude/
+
+# 测试产物
+.pytest_cache/
+test-results/
+playwright-report/
+
+# Playwright MCP 截图/快照产物
+.playwright-mcp/
+*_live.png
+*_fixed.png

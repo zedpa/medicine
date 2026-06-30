@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from agent.agent import respond
+from src.viz import venn_png, bubble_png, network_png
 
 st.set_page_config(page_title="中药网络药理学助手", page_icon="🌿", layout="wide")
 st.title("🌿 中药网络药理学一站式助手")
@@ -59,13 +60,51 @@ def render_result(result, excel_path):
                f"OB≥{result.config_snapshot.get('ob_min')} DL≥{result.config_snapshot.get('dl_min')} · "
                f"预测分数≥{result.config_snapshot.get('predicted_score_min')}")
 
-    tabs = st.tabs(["成分表", "成分-靶点", "靶点蛋白(UniProt)"])
-    with tabs[0]:
+    # 按数据存在性动态拼标签页
+    tab_names = ["成分表", "成分-靶点", "靶点蛋白(UniProt)"]
+    disease_found = bool(result.disease and result.disease.get("found"))
+    if result.intersection is not None and disease_found:
+        tab_names.append("韦恩图")
+    if result.ppi is not None:
+        tab_names.append("PPI 网络")
+    if result.enrichment is not None:
+        tab_names.append("富集气泡图")
+    tabs = st.tabs(tab_names)
+    ti = {name: tabs[i] for i, name in enumerate(tab_names)}
+
+    with ti["成分表"]:
         st.dataframe(pd.DataFrame(result.compounds), use_container_width=True, height=300)
-    with tabs[1]:
+    with ti["成分-靶点"]:
         st.dataframe(pd.DataFrame(result.compound_targets), use_container_width=True, height=300)
-    with tabs[2]:
+    with ti["靶点蛋白(UniProt)"]:
         st.dataframe(pd.DataFrame(result.proteins), use_container_width=True, height=300)
+
+    uid = f"{result.query}_{s.get('unique_targets')}"
+
+    def _img(png, fname, caption):
+        if not png:
+            st.info("数据不足，未生成该图")
+            return
+        st.image(png, caption=caption, use_container_width=False)
+        st.download_button("⬇️ 下载 PNG (300dpi)", png, file_name=fname,
+                           mime="image/png", key=f"dl_{fname}_{uid}")
+
+    if "韦恩图" in ti:
+        with ti["韦恩图"]:
+            c = result.intersection["counts"]
+            st.caption(f"药物靶点 {c['drug']} · 疾病靶点 {c['disease']} · 交集 {c['intersection']}")
+            _img(venn_png(result.intersection), f"venn_{result.query}.png", "Drug–Disease overlap")
+    if "PPI 网络" in ti:
+        with ti["PPI 网络"]:
+            st.caption(f"节点 {result.ppi['n_nodes']} · 边 {result.ppi['n_edges']} · "
+                       f"基础: {result.ppi.get('basis')}")
+            _img(network_png(result.ppi["nodes"], result.ppi["edges"], result.ppi.get("hubs")),
+                 f"ppi_{result.query}.png", "PPI network")
+    if "富集气泡图" in ti:
+        with ti["富集气泡图"]:
+            for lib, rows in result.enrichment.items():
+                st.markdown(f"**{lib}**")
+                _img(bubble_png(rows, lib), f"enrich_{lib}_{result.query}.png", lib)
 
     if excel_path and os.path.exists(excel_path):
         with open(excel_path, "rb") as fh:
