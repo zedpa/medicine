@@ -83,14 +83,17 @@ def bubble_png(rows, title: str = "") -> Optional[bytes]:
     return _fig_to_png(fig)
 
 
-def _spring_layout(nodes, edges, iterations=60):
-    """轻量 Fruchterman-Reingold 布局（无 networkx 依赖）。确定性初值。"""
+def _spring_layout(nodes, edges, iterations=90):
+    """轻量 Fruchterman-Reingold 布局（无 networkx 依赖）。确定性初值。
+
+    k（理想间距）取较大常数以拉开节点，缓解 hub-and-spoke 时高度数簇挤成一团。
+    """
     n = len(nodes)
     idx = {g: i for i, g in enumerate(nodes)}
     # 圆周确定性初始化（避免随机，保证可复现）
     pos = {g: [math.cos(2 * math.pi * i / n), math.sin(2 * math.pi * i / n)]
            for i, g in enumerate(nodes)}
-    k = 1.0 / math.sqrt(n) if n else 1.0
+    k = 2.2 / math.sqrt(n) if n else 1.0
     adj = [(idx[e["a"]], idx[e["b"]]) for e in edges if e["a"] in idx and e["b"] in idx]
     names = list(nodes)
     for it in range(iterations):
@@ -144,28 +147,43 @@ def network_png(nodes, edges, hubs=None, max_nodes=60) -> Optional[bytes]:
         edges = [e for e in edges if e["a"] in keep and e["b"] in keep]
         if not edges:
             return None
-    pos = _spring_layout(nodes, edges)
+    # 环形布局: 按度数排序均布圆周 -> 节点零重叠、标签置于圈外、确定性可复现。
+    # 相比力导向, 对「密集核心+悬挂节点」的 PPI 更可读(不塌成一团、不被外围点压缩)。
+    order = sorted(nodes, key=lambda g: (-deg.get(g, 0), g))
+    n = len(order)
+    pos = {}
+    for i, g in enumerate(order):
+        ang = 2 * math.pi * i / n - math.pi / 2     # 从顶部开始, 顺时针
+        pos[g] = (math.cos(ang), math.sin(ang))
 
-    fig, ax = plt.subplots(figsize=(6, 6))
+    fig, ax = plt.subplots(figsize=(7.5, 7.5))
+    # 边: 浅色细线(弦), 度数越相关越淡 -> 突出节点与标签
     for e in edges:
         if e["a"] in pos and e["b"] in pos:
             ax.plot([pos[e["a"]][0], pos[e["b"]][0]],
                     [pos[e["a"]][1], pos[e["b"]][1]],
-                    color="#BBBBBB", linewidth=0.6, zorder=1)
-    xs = [pos[g][0] for g in nodes]
-    ys = [pos[g][1] for g in nodes]
-    sizes = [120 + deg.get(g, 1) * 80 for g in nodes]
-    colors = [deg.get(g, 1) for g in nodes]
-    ax.scatter(xs, ys, s=sizes, c=colors, cmap="OrRd", edgecolors="gray",
-               linewidths=0.6, zorder=2)
+                    color="#9ecae1", linewidth=0.5, alpha=0.35, zorder=1)
+    xs = [pos[g][0] for g in order]
+    ys = [pos[g][1] for g in order]
+    sizes = [80 + deg.get(g, 1) * 55 for g in order]
+    colors = [deg.get(g, 1) for g in order]
+    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="OrRd", edgecolors="#555",
+                    linewidths=0.6, zorder=2)
+    fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04, label="degree (connectivity)")
+    # 标签置于圈外、按角度对齐 -> 互不重叠且可读(hub 加粗)
     hub_set = {h["gene"] for h in (hubs or [])[:10]}
-    for g in nodes:
-        fw = "bold" if g in hub_set else "normal"
-        ax.text(pos[g][0], pos[g][1], g, fontsize=7, ha="center", va="center",
-                fontweight=fw, zorder=3)
-    title = "PPI network (node size = degree)"
+    for i, g in enumerate(order):
+        ang = 2 * math.pi * i / n - math.pi / 2
+        x, y = math.cos(ang) * 1.08, math.sin(ang) * 1.08
+        ha = "left" if math.cos(ang) > 0.01 else ("right" if math.cos(ang) < -0.01 else "center")
+        ax.text(x, y, g, fontsize=7, ha=ha, va="center",
+                fontweight="bold" if g in hub_set else "normal", zorder=3)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.45, 1.45)
+    ax.set_ylim(-1.4, 1.4)
+    title = "PPI network · ring layout (node size/color = degree; hubs in bold)"
     if truncated:
-        title += f"\n(top {len(nodes)} hub nodes shown; {truncated} more in Excel/GraphML)"
-    ax.set_title(title)
+        title += f"\n(top {len(order)} hub nodes shown; {truncated} more in Excel/GraphML)"
+    ax.set_title(title, fontsize=10)
     ax.axis("off")
     return _fig_to_png(fig)

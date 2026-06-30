@@ -163,10 +163,12 @@ BATMAN-TCM 2.0、PubChem、TCMSP、UniProt、mygene.info、Open Targets(T1)、ST
 | 修复后仍读到旧 found=False | 负结果被永久缓存 | 仅缓存命中结果（不缓存未命中） | （行为变更，缓存命中测试不受影响） |
 | 韦恩图退化成单圈 | 疾病侧为空仍渲染 | `venn_png` 疾病侧空→None；网页仅 `disease.found` 显示该标签 | `test_venn_png_and_empty` 扩展 |
 | PPI 187 节点标签糊 | 渲染未限制节点数 | `network_png(max_nodes=60)` 取度数 top-N，余数在 Excel/GraphML | `test_network_png_caps_large_graph` |
+| PPI 力导向布局塌成一团/被裁 | 「密集核心+悬挂节点」时 FR 布局把核心压成重叠团，少数外围点撑大边界框使核心缩小、贴边被裁 | 改**按度数排序的环形布局**：节点均布圆周零重叠、标签置圈外按角度对齐、加 degree 色条 | `test_viz.py` 全绿（PNG 校验，布局无关） |
 
-修复后实景复测（截图存档）：韦恩 736/36/90、PPI 聚焦 36 交集靶点且标签可读、KEGG 富集转为
-高血压特异通路（血管平滑肌收缩 / 醛固酮分泌 / 心肌收缩）。教训：**图表类需求必须真浏览器目检**，
-断言「图存在」远不够，要核对图的**语义正确性**（节点可读、交集非退化、通路与疾病相关）。
+修复后实景复测（截图存档）：韦恩 736/36/90、PPI 环形布局 35 节点标签零重叠（hub AGTR1/IGF1/CACNA1C
+加粗、按 degree 着色）、KEGG 富集转为高血压特异通路（血管平滑肌收缩 / 醛固酮分泌 / 心肌收缩）。
+教训：**图表类需求必须真浏览器目检**，断言「图存在」远不够，要核对图的**语义正确性 + 版面可读性**
+（节点不重叠、交集非退化、通路与疾病相关）。手调力导向不可靠时，**确定性环形/分层布局**是更稳的可读性兜底。
 
 ## 4. 数据源说明
 Open Targets Platform GraphQL：`https://api.platform.opentargets.org/api/v4/graphql`，免密钥。

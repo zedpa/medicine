@@ -25,3 +25,4 @@ playwright-report/
 .playwright-mcp/
 *_live.png
 *_fixed.png
+live_*.png

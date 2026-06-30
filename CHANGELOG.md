@@ -25,6 +25,13 @@
 - 验证：肉桂 TCMSP 99 分子→77 解析 InChIKey；肉桂醛真实 OB=32.0/DL=0.023。
   注：肉桂全库最大 DL=0.154<0.18，严格阈值下 0 通过（真实数据，非 bug）。
 
+## 2026-06-30 · PPI 图改环形布局 + 对话历史实景走查 (Playwright MCP)
+- 实景走查对话历史(LLM 模式「分析肉桂治疗高血压」)：新建对话→历史保留、点回会话→结果面板+图表
+  经快照重显、跨服务重启历史仍在，全部通过。
+- 实景目检发现 PPI 力导向布局对「密集核心+悬挂节点」会塌成重叠团且贴边被裁 → `src/viz.py`
+  `network_png` 改**按度数排序的环形布局**：节点均布圆周零重叠、标签置圈外按角度对齐、加 degree 色条。
+  纯渲染改进，无口径/阈值变更；`test_viz.py` 5 passed、全套 43 + E2E 7 无回归。
+
 ## 2026-06-30 · 结果快照: 切换历史会话重显结果面板 (spec-003 T3) — 历史 T1–T3 全部完成
 - 新增 `src/pipeline.py › result_to_snapshot/snapshot_to_result` 纯函数：PipelineResult 全字段本就
   JSON 可序列化 → 快照只做字段选取 + JSON 往返；图表(venn/ppi/enrichment)切回会话时由 viz 从 dict
