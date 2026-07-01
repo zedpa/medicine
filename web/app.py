@@ -142,9 +142,28 @@ button[kind="primary"]:hover{ background:var(--pine-soft); border-color:var(--pi
 [data-testid="stMetricValue"]{ color:var(--pine); }
 [data-testid="stMetricLabel"]{ color:var(--muted); }
 
-/* 侧栏 */
+/* 侧栏(Claude 网页版结构): 无衬线、紧凑、会话行左对齐单行截断 */
 [data-testid="stSidebar"]{ border-right:1px solid var(--line); }
-[data-testid="stSidebar"] h3{ font-size:16px; }
+/* 侧栏标题不用宋体, 与 Claude 一致的干净无衬线 */
+[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif !important;
+}
+.side-brand{ display:flex; align-items:center; gap:7px; font-weight:600; font-size:15px;
+  color:var(--ink); padding:2px 2px 10px; letter-spacing:.01em; }
+.side-spacer{ height:14px; }
+.side-account{ display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted);
+  padding:2px 2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+/* 会话列表: 幽灵态标题(左对齐、单行截断), 选中态柔和苔绿(非抢眼松绿) */
+.st-key-convlist .stButton>button{ justify-content:flex-start; text-align:left;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500;
+  background:transparent; border-color:transparent; }
+.st-key-convlist .stButton>button:hover{ background:#fff; border-color:var(--line); }
+.st-key-convlist .stButton>button[kind="primary"]{ background:var(--sage); color:var(--ink);
+  border-color:var(--line); font-weight:600; }
+/* ⋯ 菜单触发按钮: 紧凑不撑破窄列(修复挤成「.·」) */
+.st-key-convlist [data-testid="stPopover"] button{ padding-left:0; padding-right:0;
+  min-height:38px; border-color:transparent; background:transparent; }
+.st-key-convlist [data-testid="stPopover"] button:hover{ background:#fff; border-color:var(--line); }
 
 /* 选项卡选中色 / 表单卡 / 数据表圆角 */
 [data-testid="stTabs"] button[aria-selected="true"]{ color:var(--pine)!important; }
@@ -269,47 +288,50 @@ def _open_conversation(store, conv_id):
 
 
 with st.sidebar:
-    st.markdown("### 🌿 中药网络药理学")
+    # ① 品牌(紧凑、无衬线)
+    st.markdown('<div class="side-brand">🌿 中药网络药理学</div>', unsafe_allow_html=True)
     _store, _hcfg = _history()
 
-    # 顶部: 新建对话(Claude 风格, 醒目)
+    # ② 新建对话(醒目主按钮)
     if st.button("✚　新建对话", use_container_width=True, type="primary"):
         _new_conversation()
         st.rerun()
 
+    # ③ 最近对话(Claude 式扁平列表: 标题幽灵按钮 + 右侧「⋯」菜单)
     st.caption("最近对话")
     _convs = _store.list(st.session_state.owner,
                          limit=int(_hcfg.get("max_conversations", 50)))
-    if not _convs:
-        st.caption("暂无历史，开始第一轮提问吧")
-
-    for _c in _convs:
-        _cur = _c["id"] == st.session_state.conv_id
-        _title = _c["title"] or "新对话"
-        _row, _menu = st.columns([6, 1], vertical_alignment="center")
-        # 选中态用 primary 高亮(替代 🟢 emoji), 更接近 Claude 的当前会话样式
-        if _row.button(_title, key=f"open_{_c['id']}", use_container_width=True,
-                       type="primary" if _cur else "secondary"):
-            _open_conversation(_store, _c["id"])
-            st.rerun()
-        # 管理操作收进「⋯」三点菜单(重命名 / 删除)
-        with _menu.popover("⋯", use_container_width=True):
-            st.caption(_title)
-            _new_name = st.text_input("重命名", value=_title, key=f"rn_{_c['id']}",
-                                      label_visibility="collapsed")
-            if st.button("✏️ 重命名", key=f"rnbtn_{_c['id']}", use_container_width=True):
-                if _new_name.strip():
-                    _store.set_title(_c["id"], st.session_state.owner, _new_name.strip())
-                    st.rerun()
-            if st.button("🗑 删除对话", key=f"del_{_c['id']}", use_container_width=True):
-                _store.delete(_c["id"], st.session_state.owner)
-                if _c["id"] == st.session_state.conv_id:
-                    st.session_state.messages = []
-                    st.session_state.results = []
-                    st.session_state.conv_id = uuid.uuid4().hex
+    with st.container(key="convlist"):
+        if not _convs:
+            st.caption("暂无历史，开始第一轮提问吧")
+        for _c in _convs:
+            _cur = _c["id"] == st.session_state.conv_id
+            _title = _c["title"] or "新对话"
+            _row, _menu = st.columns([0.8, 0.2], vertical_alignment="center")
+            # 选中态经 CSS 呈柔和苔绿高亮(见 .st-key-convlist)
+            if _row.button(_title, key=f"open_{_c['id']}", use_container_width=True,
+                           type="primary" if _cur else "secondary"):
+                _open_conversation(_store, _c["id"])
                 st.rerun()
+            # 管理操作收进「⋯」菜单(重命名 / 删除)
+            with _menu.popover("⋯", use_container_width=True):
+                st.caption(_title)
+                _new_name = st.text_input("重命名", value=_title, key=f"rn_{_c['id']}",
+                                          label_visibility="collapsed")
+                if st.button("✏️ 重命名", key=f"rnbtn_{_c['id']}", use_container_width=True):
+                    if _new_name.strip():
+                        _store.set_title(_c["id"], st.session_state.owner, _new_name.strip())
+                        st.rerun()
+                if st.button("🗑 删除对话", key=f"del_{_c['id']}", use_container_width=True):
+                    _store.delete(_c["id"], st.session_state.owner)
+                    if _c["id"] == st.session_state.conv_id:
+                        st.session_state.messages = []
+                        st.session_state.results = []
+                        st.session_state.conv_id = uuid.uuid4().hex
+                    st.rerun()
 
-    # 底部: 账户 + 设置/状态收进 expander, 列表更聚焦(Claude 把账户信息放底部)
+    # ④ 底部账户区(Claude 把账户/设置放最底): 管理入口 → 账户 → 后端
+    st.markdown('<div class="side-spacer"></div>', unsafe_allow_html=True)
     st.divider()
     # 管理后台入口: 仅 admin 可见(spec-005 FR-T2.1)
     if st.session_state.get("role") == "admin":
@@ -322,13 +344,15 @@ with st.sidebar:
                 st.session_state.view = "admin"
                 st.rerun()
     if st.session_state.get("auth") is not None:
-        _who, _out = st.columns([6, 3], vertical_alignment="center")
+        _who, _out = st.columns([0.68, 0.32], vertical_alignment="center")
         _role_badge = "管理员" if st.session_state.get("role") == "admin" else "用户"
-        _who.caption(f"👤 {st.session_state.get('name') or st.session_state.owner}"
-                     f"　·　{_role_badge}")
+        _who.markdown(
+            f'<div class="side-account">👤 {st.session_state.get("name") or st.session_state.owner}'
+            f'　·　{_role_badge}</div>', unsafe_allow_html=True)
         with _out:
             st.session_state.auth.logout("登出", location="main",
                                          use_container_width=True)
+    # 后端状态(紧凑一行; 「清空对话」已移除——有历史后用「新建对话」即可)
     if os.environ.get("DEEPSEEK_API_KEY"):
         _backend = "DeepSeek (deepseek-chat)"
     elif os.environ.get("OPENAI_API_KEY"):
@@ -336,15 +360,8 @@ with st.sidebar:
     elif os.environ.get("ANTHROPIC_API_KEY"):
         _backend = "Claude (claude-opus-4-8)"
     else:
-        _backend = "直接模式(无 LLM, 输入即药材名)"
-    with st.expander(f"ℹ️ {_backend}", expanded=False):
-        st.markdown("**示例**: `肉桂` / `黄芪, 当归` / `Cinnamomum cassia`")
-        st.caption("数据来源: BATMAN-TCM 2.0 + PubChem + UniProt + STRING + Enrichr")
-        if st.button("🧹 清空当前对话内容", use_container_width=True):
-            # 仅清屏(不删历史库): 历史会话仍保留在侧边栏
-            st.session_state.messages = []
-            st.session_state.results = []
-            st.rerun()
+        _backend = "直接模式(无 LLM)"
+    st.caption(f"ℹ️ {_backend}")
 
 
 def render_result(result, excel_path):

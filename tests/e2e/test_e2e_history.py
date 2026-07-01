@@ -15,6 +15,17 @@ def _ask(page, text):
     page.get_by_test_id("stAlertContentWarning").first.wait_for(timeout=120_000)
 
 
+def test_sidebar_structure_claude_like(page_to_app):  # spec-008: 结构重整
+    """有历史后「清空对话」无意义 -> 移除; 侧栏保留新建/最近对话/账户核心结构。"""
+    page = page_to_app
+    sb = page.locator(SIDEBAR)
+    sb.get_by_role("button", name="新建对话").wait_for(timeout=30_000)
+    assert sb.get_by_text("最近对话").is_visible()
+    assert sb.get_by_role("button", name="登出").count() == 1
+    # 「清空当前对话内容」按钮已移除
+    assert sb.get_by_role("button", name="清空").count() == 0
+
+
 def test_history_persists_after_reload(page_to_app):  # AC-9
     page = page_to_app
     q = "历史甲药xyz"
